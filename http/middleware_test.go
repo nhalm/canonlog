@@ -17,7 +17,7 @@ func TestMiddleware(t *testing.T) {
 		canonlog.AddRequestField(ctx, "test_field", "test_value")
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}))
 
 	req := httptest.NewRequest("GET", "/test", nil)
@@ -78,7 +78,7 @@ func TestMiddlewareCustomGenerator(t *testing.T) {
 func TestMiddlewareResponseWriter(t *testing.T) {
 	handler := Middleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte("test response"))
+		_, _ = w.Write([]byte("test response"))
 	}))
 
 	req := httptest.NewRequest("POST", "/test", nil)
@@ -155,7 +155,7 @@ func TestChiMiddleware(t *testing.T) {
 		canonlog.AddRequestField(ctx, "test_field", "test_value")
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}))
 
 	req := httptest.NewRequest("GET", "/test", nil)
@@ -177,9 +177,6 @@ func TestChiMiddlewareWithChiRequestID(t *testing.T) {
 	chiID := "chi-generated-id"
 
 	handler := ChiMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), chimiddleware.RequestIDKey, chiID)
-		r = r.WithContext(ctx)
-
 		w.WriteHeader(http.StatusOK)
 	}))
 
