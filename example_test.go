@@ -72,7 +72,7 @@ func ExampleMiddleware() {
 		})
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	req := httptest.NewRequest("GET", "/api/users", nil)
