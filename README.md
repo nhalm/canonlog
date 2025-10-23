@@ -1,5 +1,9 @@
 # canonlog
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/nhalm/canonlog.svg)](https://pkg.go.dev/github.com/nhalm/canonlog)
+[![codecov](https://codecov.io/gh/nhalm/canonlog/branch/main/graph/badge.svg)](https://codecov.io/gh/nhalm/canonlog)
+[![Go Report Card](https://goreportcard.com/badge/github.com/nhalm/canonlog)](https://goreportcard.com/report/github.com/nhalm/canonlog)
+
 Canonical Logger - A structured logging library for Go that accumulates request context and emits single-line log entries.
 
 ## Philosophy
@@ -62,13 +66,6 @@ func main() {
 			"db_queries": 2,
 		})
 
-		// Log errors (automatically sets log level to error)
-		if err := someOperation(); err != nil {
-			canonlog.AddRequestError(ctx, err)
-			http.Error(w, "Internal error", 500)
-			return
-		}
-
 		w.Write([]byte("OK"))
 	})
 
@@ -116,6 +113,8 @@ func main() {
 
 ## Example Output
 
+### JSON Format
+
 ```json
 {
   "time": "2025-01-15T10:30:45Z",
@@ -138,138 +137,49 @@ func main() {
 }
 ```
 
+### Text (logfmt) Format
+
+```
+time=2025-01-15T10:30:45Z level=INFO msg="Request completed" duration=45.2ms duration_ms=45 requestID=018e8e9e-45a1-7000-8000-123456789abc method=GET path=/api/users/123 user_agent=Mozilla/5.0... remote_ip=192.168.1.1:54321 host=api.example.com status=200 response_size=1024 user_id=123 action=fetch_profile cache_hit=true db_queries=2
+```
+
 ## API Reference
 
-### Core Functions
+### Core
 
-#### `SetupGlobalLogger(logLevel, logFormat string)`
+**`SetupGlobalLogger(logLevel, logFormat string)`** - Configure global slog logger. Levels: "debug", "info", "warn", "error". Formats: "json", "text".
 
-Configure the global slog logger.
+**`GenerateRequestID() string`** - Generate UUIDv7 request ID.
 
-- `logLevel`: "debug", "info", "warn", "error" (default: "info")
-- `logFormat`: "json", "text" (default: "text")
-
-```go
-canonlog.SetupGlobalLogger("debug", "json")
-```
-
-#### `GenerateRequestID() string`
-
-Generate a UUIDv7-based request ID (time-ordered, sortable).
-
-```go
-id := canonlog.GenerateRequestID()
-// Returns: "018e8e9e-45a1-7000-8000-123456789abc"
-```
-
-#### `RequestIDGenerator`
-
-Global variable to customize request ID generation.
-
-```go
-// Use custom ID format
-canonlog.RequestIDGenerator = func() string {
-	return fmt.Sprintf("req_%d", time.Now().UnixNano())
-}
-```
+**`RequestIDGenerator`** - Global variable for custom ID generation. Override to customize.
 
 ### Request Logger
 
-#### `NewRequestLogger() *RequestLogger`
+**`NewRequestLogger() *RequestLogger`** - Create new request logger.
 
-Create a new request logger (typically done by middleware).
+**`(*RequestLogger).WithField(key, value) *RequestLogger`** - Add field (chainable).
 
-#### `(*RequestLogger).WithField(key string, value any) *RequestLogger`
+**`(*RequestLogger).WithFields(map[string]any) *RequestLogger`** - Add multiple fields (chainable).
 
-Add a single field to the logger (chainable).
+**`(*RequestLogger).WithError(error) *RequestLogger`** - Add error, sets level to error (chainable).
 
-```go
-rl := canonlog.NewRequestLogger()
-rl.WithField("user_id", "123").WithField("action", "login")
-```
-
-#### `(*RequestLogger).WithFields(fields map[string]any) *RequestLogger`
-
-Add multiple fields at once (chainable).
-
-#### `(*RequestLogger).WithError(err error) *RequestLogger`
-
-Add an error and set log level to error (chainable).
-
-#### `(*RequestLogger).Log(ctx context.Context)`
-
-Emit the accumulated log entry.
+**`(*RequestLogger).Log(ctx)`** - Emit accumulated log entry.
 
 ### Context Helpers
 
-#### `AddRequestField(ctx context.Context, key string, value any)`
+**`AddRequestField(ctx, key, value)`** - Add field to logger in context.
 
-Add a field to the request logger stored in context.
+**`AddRequestFields(ctx, map[string]any)`** - Add multiple fields to logger in context.
 
-```go
-canonlog.AddRequestField(ctx, "user_id", userID)
-```
+**`AddRequestError(ctx, error)`** - Add error to logger in context.
 
-#### `AddRequestFields(ctx context.Context, fields map[string]any)`
-
-Add multiple fields to the request logger in context.
-
-```go
-canonlog.AddRequestFields(ctx, map[string]any{
-	"user_id": "123",
-	"role": "admin",
-})
-```
-
-#### `AddRequestError(ctx context.Context, err error)`
-
-Add an error to the request logger in context.
-
-```go
-if err != nil {
-	canonlog.AddRequestError(ctx, err)
-}
-```
-
-#### `LogRequest(ctx context.Context)`
-
-Manually log the accumulated request data (normally called by middleware defer).
+**`LogRequest(ctx)`** - Manually log accumulated data.
 
 ### Middleware
 
-#### `Middleware(generator func() string) func(http.Handler) http.Handler`
+**`Middleware(generator) func(http.Handler) http.Handler`** - Standard HTTP middleware. Pass `nil` for default UUIDv7 generation.
 
-Standard library HTTP middleware.
-
-- Checks `X-Request-ID` header
-- Generates UUIDv7 if not present
-- Sets `X-Request-ID` response header
-- Logs request on completion
-
-```go
-// Use default UUIDv7 generation
-handler := canonhttp.Middleware(nil)(yourHandler)
-
-// Custom ID generation for this middleware instance
-handler := canonhttp.Middleware(func() string {
-	return uuid.New().String()
-})(yourHandler)
-```
-
-#### `ChiMiddleware(generator func() string) func(http.Handler) http.Handler`
-
-Chi router middleware with chi.RequestID integration.
-
-- Checks chi's `middleware.GetReqID()` first
-- Falls back to `X-Request-ID` header
-- Generates UUIDv7 if not present
-- Sets `X-Request-ID` response header
-- Logs request on completion
-
-```go
-r.Use(middleware.RequestID) // Optional but recommended
-r.Use(canonhttp.ChiMiddleware(nil))
-```
+**`ChiMiddleware(generator) func(http.Handler) http.Handler`** - Chi router middleware with RequestID integration. Pass `nil` for default.
 
 ## Request ID Flow in Microservices
 
@@ -280,19 +190,33 @@ Canonlog supports request ID propagation across service boundaries:
 3. **All services**: Pass request ID to subsequent downstream calls
 
 ```go
-// In your HTTP client
+// Store request ID in a custom context key for easy access
+type contextKey string
+const requestIDKey contextKey = "requestID"
+
+// Middleware wrapper to store request ID
+func storeRequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID != "" {
+			ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+			r = r.WithContext(ctx)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Propagate request ID to downstream service
 func callDownstream(ctx context.Context, url string) error {
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 
-	// Propagate request ID to downstream service
-	if rl := canonlog.GetRequestLogger(ctx); rl != nil {
-		// Extract requestID from logger fields if you stored it
-		// Or store it separately in context for easy access
+	if requestID, ok := ctx.Value(requestIDKey).(string); ok {
 		req.Header.Set("X-Request-ID", requestID)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	// ...
+	return err
 }
 ```
 
@@ -301,7 +225,7 @@ func callDownstream(ctx context.Context, url string) error {
 Use the request logger independently for background jobs, workers, or CLI tools:
 
 ```go
-func processJob(jobID string) {
+func processJob(jobID string) error {
 	ctx := canonlog.NewRequestContext(context.Background())
 	rl := canonlog.GetRequestLogger(ctx)
 
@@ -310,13 +234,14 @@ func processJob(jobID string) {
 
 	defer rl.Log(ctx)
 
-	// Process work
-	if err := doWork(); err != nil {
-		rl.WithError(err)
-		return
+	recordsProcessed := 0
+	for i := 0; i < 1500; i++ {
+		// Process each record
+		recordsProcessed++
 	}
 
-	rl.WithField("records_processed", 1500)
+	rl.WithField("records_processed", recordsProcessed)
+	return nil
 }
 ```
 
