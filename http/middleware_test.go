@@ -14,7 +14,7 @@ func TestMiddleware(t *testing.T) {
 	handler := Middleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		canonlog.Set(ctx, "test_field", "test_value")
+		canonlog.InfoAdd(ctx, "test_field", "test_value")
 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
@@ -127,13 +127,13 @@ func TestResponseWriterWriteHeader(t *testing.T) {
 }
 
 func TestMiddlewareContextPropagation(t *testing.T) {
-	var capturedCtx *canonlog.RequestLogger
+	var capturedCtx *canonlog.Logger
 
 	handler := Middleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		capturedCtx = canonlog.GetLogger(ctx)
 
-		canonlog.Set(ctx, "test", "value")
+		canonlog.InfoAdd(ctx, "test", "value")
 
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -144,7 +144,7 @@ func TestMiddlewareContextPropagation(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	if capturedCtx == nil {
-		t.Fatal("Request logger not found in context")
+		t.Fatal("Logger not found in context")
 	}
 }
 
@@ -152,7 +152,7 @@ func TestChiMiddleware(t *testing.T) {
 	handler := ChiMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		canonlog.Set(ctx, "test_field", "test_value")
+		canonlog.InfoAdd(ctx, "test_field", "test_value")
 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))

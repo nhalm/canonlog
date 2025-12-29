@@ -2,6 +2,7 @@ package canonlog
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 )
 
@@ -12,25 +13,33 @@ func BenchmarkGenerateRequestID(b *testing.B) {
 	}
 }
 
-func BenchmarkNewRequestLogger(b *testing.B) {
+func BenchmarkNew(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = NewRequestLogger()
+		_ = New()
 	}
 }
 
-func BenchmarkRequestLoggerWithField(b *testing.B) {
-	rl := NewRequestLogger()
+func BenchmarkLoggerInfoAdd(b *testing.B) {
+	oldLevel := logLevel
+	logLevel = slog.LevelInfo
+	defer func() { logLevel = oldLevel }()
+
+	l := New()
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		rl.WithField("key", "value")
+		l.InfoAdd("key", "value")
 	}
 }
 
-func BenchmarkRequestLoggerWithFields(b *testing.B) {
-	rl := NewRequestLogger()
+func BenchmarkLoggerInfoAddMany(b *testing.B) {
+	oldLevel := logLevel
+	logLevel = slog.LevelInfo
+	defer func() { logLevel = oldLevel }()
+
+	l := New()
 	fields := map[string]interface{}{
 		"key1": "value1",
 		"key2": "value2",
@@ -40,22 +49,30 @@ func BenchmarkRequestLoggerWithFields(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		rl.WithFields(fields)
+		l.InfoAddMany(fields)
 	}
 }
 
-func BenchmarkSet(b *testing.B) {
-	ctx := NewRequestContext(context.Background())
+func BenchmarkInfoAdd(b *testing.B) {
+	oldLevel := logLevel
+	logLevel = slog.LevelInfo
+	defer func() { logLevel = oldLevel }()
+
+	ctx := NewContext(context.Background())
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		Set(ctx, "key", "value")
+		InfoAdd(ctx, "key", "value")
 	}
 }
 
-func BenchmarkSetAll(b *testing.B) {
-	ctx := NewRequestContext(context.Background())
+func BenchmarkInfoAddMany(b *testing.B) {
+	oldLevel := logLevel
+	logLevel = slog.LevelInfo
+	defer func() { logLevel = oldLevel }()
+
+	ctx := NewContext(context.Background())
 	fields := map[string]interface{}{
 		"key1": "value1",
 		"key2": "value2",
@@ -65,11 +82,15 @@ func BenchmarkSetAll(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		SetAll(ctx, fields)
+		InfoAddMany(ctx, fields)
 	}
 }
 
-func BenchmarkRequestLoggerLog(b *testing.B) {
+func BenchmarkLoggerFlush(b *testing.B) {
+	oldLevel := logLevel
+	logLevel = slog.LevelInfo
+	defer func() { logLevel = oldLevel }()
+
 	ctx := context.Background()
 	SetupGlobalLogger("info", "json")
 
@@ -77,19 +98,19 @@ func BenchmarkRequestLoggerLog(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		rl := NewRequestLogger()
-		rl.WithField("user_id", "123")
-		rl.WithField("action", "test")
-		rl.WithFields(map[string]interface{}{
+		l := New()
+		l.InfoAdd("user_id", "123")
+		l.InfoAdd("action", "test")
+		l.InfoAddMany(map[string]interface{}{
 			"key1": "value1",
 			"key2": 123,
 			"key3": true,
 		})
-		rl.Log(ctx)
+		l.Flush(ctx)
 	}
 }
 
-func BenchmarkRequestLoggerLogWithError(b *testing.B) {
+func BenchmarkLoggerFlushWithError(b *testing.B) {
 	ctx := context.Background()
 	SetupGlobalLogger("error", "json")
 	testErr := context.DeadlineExceeded
@@ -98,15 +119,15 @@ func BenchmarkRequestLoggerLogWithError(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		rl := NewRequestLogger()
-		rl.WithField("user_id", "123")
-		rl.WithError(testErr)
-		rl.Log(ctx)
+		l := New()
+		l.InfoAdd("user_id", "123")
+		l.WithError(testErr)
+		l.Flush(ctx)
 	}
 }
 
 func BenchmarkGetLogger(b *testing.B) {
-	ctx := NewRequestContext(context.Background())
+	ctx := NewContext(context.Background())
 	b.ResetTimer()
 	b.ReportAllocs()
 
@@ -126,22 +147,26 @@ func BenchmarkGetLoggerFallback(b *testing.B) {
 }
 
 func BenchmarkFullRequestCycle(b *testing.B) {
+	oldLevel := logLevel
+	logLevel = slog.LevelInfo
+	defer func() { logLevel = oldLevel }()
+
 	SetupGlobalLogger("info", "json")
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		ctx := NewRequestContext(context.Background())
+		ctx := NewContext(context.Background())
 
-		Set(ctx, "request_id", GenerateRequestID())
-		Set(ctx, "method", "GET")
-		Set(ctx, "path", "/api/users")
-		SetAll(ctx, map[string]interface{}{
+		InfoAdd(ctx, "request_id", GenerateRequestID())
+		InfoAdd(ctx, "method", "GET")
+		InfoAdd(ctx, "path", "/api/users")
+		InfoAddMany(ctx, map[string]interface{}{
 			"user_id":       "123",
 			"status":        200,
 			"response_size": 1024,
 		})
 
-		LogRequest(ctx)
+		Flush(ctx)
 	}
 }

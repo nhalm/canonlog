@@ -19,42 +19,41 @@ func ExampleGenerateRequestID() {
 	fmt.Printf("Generated request ID: %s\n", id)
 }
 
-func ExampleRequestLogger() {
+func ExampleLogger() {
 	ctx := context.Background()
-	rl := canonlog.NewRequestLogger()
+	l := canonlog.New()
 
-	rl.WithField("user_id", "123")
-	rl.WithField("action", "create_order")
-	rl.WithFields(map[string]any{
+	l.InfoAdd("user_id", "123")
+	l.InfoAdd("action", "create_order")
+	l.InfoAddMany(map[string]any{
 		"amount":   99.99,
 		"currency": "USD",
 	})
 
-	defer rl.Log(ctx)
+	defer l.Flush(ctx)
 }
 
-func ExampleSet() {
-	ctx := canonlog.NewRequestContext(context.Background())
+func ExampleInfoAdd() {
+	ctx := canonlog.NewContext(context.Background())
 
-	canonlog.Set(ctx, "user_id", "123")
-	canonlog.Set(ctx, "action", "fetch_profile")
+	canonlog.InfoAdd(ctx, "user_id", "123")
+	canonlog.InfoAdd(ctx, "action", "fetch_profile")
 }
 
-func ExampleSetAll() {
-	ctx := canonlog.NewRequestContext(context.Background())
+func ExampleInfoAddMany() {
+	ctx := canonlog.NewContext(context.Background())
 
-	canonlog.SetAll(ctx, map[string]any{
+	canonlog.InfoAddMany(ctx, map[string]any{
 		"user_id": "123",
 		"org_id":  "456",
 		"role":    "admin",
 	})
 }
 
-func ExampleSetError() {
-	ctx := canonlog.NewRequestContext(context.Background())
+func ExampleErrorAdd() {
+	ctx := canonlog.NewContext(context.Background())
 
-	err := fmt.Errorf("database connection failed")
-	canonlog.SetError(ctx, err)
+	canonlog.ErrorAdd(ctx, "payment_status", "failed")
 }
 
 func ExampleMiddleware() {
@@ -65,8 +64,8 @@ func ExampleMiddleware() {
 	mux.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		canonlog.Set(ctx, "user_id", "123")
-		canonlog.SetAll(ctx, map[string]any{
+		canonlog.InfoAdd(ctx, "user_id", "123")
+		canonlog.InfoAddMany(ctx, map[string]any{
 			"action": "list_users",
 			"page":   1,
 		})
@@ -99,16 +98,17 @@ func ExampleMiddleware_customGenerator() {
 	handler.ServeHTTP(rec, req)
 }
 
-func ExampleRequestLogger_chainable() {
+func ExampleLogger_chainable() {
 	ctx := context.Background()
 
-	rl := canonlog.NewRequestLogger()
-	rl.WithField("user_id", "123").
-		WithField("action", "login").
-		WithFields(map[string]any{
+	l := canonlog.New()
+	l.DebugAdd("cache", "hit").
+		InfoAdd("user_id", "123").
+		InfoAdd("action", "login").
+		InfoAddMany(map[string]any{
 			"ip":         "192.168.1.1",
 			"user_agent": "Mozilla/5.0",
 		})
 
-	defer rl.Log(ctx)
+	defer l.Flush(ctx)
 }

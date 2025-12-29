@@ -6,21 +6,21 @@ import (
 	"time"
 )
 
-type requestLoggerKeyType string
+type loggerKeyType string
 
-const requestLoggerKey requestLoggerKeyType = "requestLogger"
+const loggerKey loggerKeyType = "canonlogger"
 
-// RequestLogger accumulates context throughout a request and logs once at the end.
-// It collects fields, errors, and metadata as the request is processed, then outputs
-// everything in a single structured log line when Log is called.
+// Logger accumulates context throughout a unit of work and logs once at the end.
+// It collects fields and metadata as work is processed, then outputs
+// everything in a single structured log line when Flush is called.
 //
 // Example usage:
 //
-//	rl := canonlog.NewRequestLogger()
-//	rl.WithField("user_id", "123")
-//	rl.WithField("action", "create_order")
-//	defer rl.Log(ctx)
-type RequestLogger struct {
+//	log := canonlog.New()
+//	log.DebugAdd("cache", "hit")
+//	log.InfoAdd("user_id", "123")
+//	defer log.Flush(ctx)
+type Logger struct {
 	startTime time.Time
 	fields    map[string]interface{}
 	errors    []error
@@ -28,168 +28,206 @@ type RequestLogger struct {
 	message   string
 }
 
-// NewRequestLogger creates a new request logger with default settings.
-// The logger starts with INFO level and "Request completed" as the default message.
-func NewRequestLogger() *RequestLogger {
-	return &RequestLogger{
+// New creates a new logger with default settings.
+// The logger starts with INFO level and "Completed" as the default message.
+func New() *Logger {
+	return &Logger{
 		startTime: time.Now(),
 		fields:    make(map[string]interface{}),
 		errors:    make([]error, 0),
 		level:     slog.LevelInfo,
-		message:   "Request completed",
+		message:   "Completed",
 	}
 }
 
-// WithField adds a field to the request logger and returns the logger for chaining.
-//
-// Example:
-//
-//	rl.WithField("user_id", "123").WithField("action", "login")
-func (rl *RequestLogger) WithField(key string, value interface{}) *RequestLogger {
-	rl.fields[key] = value
-	return rl
-}
-
-// WithFields adds multiple fields to the request logger and returns the logger for chaining.
-//
-// Example:
-//
-//	rl.WithFields(map[string]any{
-//		"user_id": "123",
-//		"role": "admin",
-//	})
-func (rl *RequestLogger) WithFields(fields map[string]interface{}) *RequestLogger {
-	for k, v := range fields {
-		rl.fields[k] = v
+// DebugAdd adds a field if debug level is enabled.
+func (l *Logger) DebugAdd(key string, value interface{}) *Logger {
+	if logLevel <= slog.LevelDebug {
+		l.fields[key] = value
 	}
-	return rl
+	return l
 }
 
-// WithError adds an error to the request logger, sets the log level to ERROR,
-// and changes the message to "Request failed". Returns the logger for chaining.
-//
+// DebugAddMany adds multiple fields if debug level is enabled.
+func (l *Logger) DebugAddMany(fields map[string]interface{}) *Logger {
+	if logLevel <= slog.LevelDebug {
+		for k, v := range fields {
+			l.fields[k] = v
+		}
+	}
+	return l
+}
+
+// InfoAdd adds a field if info level is enabled.
+func (l *Logger) InfoAdd(key string, value interface{}) *Logger {
+	if logLevel <= slog.LevelInfo {
+		l.fields[key] = value
+	}
+	return l
+}
+
+// InfoAddMany adds multiple fields if info level is enabled.
+func (l *Logger) InfoAddMany(fields map[string]interface{}) *Logger {
+	if logLevel <= slog.LevelInfo {
+		for k, v := range fields {
+			l.fields[k] = v
+		}
+	}
+	return l
+}
+
+// WarnAdd adds a field if warn level is enabled and sets level to at least Warn.
+func (l *Logger) WarnAdd(key string, value interface{}) *Logger {
+	if logLevel <= slog.LevelWarn {
+		l.fields[key] = value
+		if l.level < slog.LevelWarn {
+			l.level = slog.LevelWarn
+		}
+	}
+	return l
+}
+
+// WarnAddMany adds multiple fields if warn level is enabled and sets level to at least Warn.
+func (l *Logger) WarnAddMany(fields map[string]interface{}) *Logger {
+	if logLevel <= slog.LevelWarn {
+		for k, v := range fields {
+			l.fields[k] = v
+		}
+		if l.level < slog.LevelWarn {
+			l.level = slog.LevelWarn
+		}
+	}
+	return l
+}
+
+// ErrorAdd adds a field if error level is enabled and sets level to Error.
+func (l *Logger) ErrorAdd(key string, value interface{}) *Logger {
+	if logLevel <= slog.LevelError {
+		l.fields[key] = value
+		l.level = slog.LevelError
+	}
+	return l
+}
+
+// ErrorAddMany adds multiple fields if error level is enabled and sets level to Error.
+func (l *Logger) ErrorAddMany(fields map[string]interface{}) *Logger {
+	if logLevel <= slog.LevelError {
+		for k, v := range fields {
+			l.fields[k] = v
+		}
+		l.level = slog.LevelError
+	}
+	return l
+}
+
+// WithError adds an error, sets the log level to ERROR,
+// and changes the message to "Failed". Returns the logger for chaining.
 // Multiple errors can be added and will all be logged together.
-func (rl *RequestLogger) WithError(err error) *RequestLogger {
+func (l *Logger) WithError(err error) *Logger {
 	if err != nil {
-		rl.errors = append(rl.errors, err)
-		rl.level = slog.LevelError
-		rl.message = "Request failed"
+		l.errors = append(l.errors, err)
+		l.level = slog.LevelError
+		l.message = "Failed"
 	}
-	return rl
-}
-
-// SetLevel sets the log level for the final log entry and returns the logger for chaining.
-func (rl *RequestLogger) SetLevel(level slog.Level) *RequestLogger {
-	rl.level = level
-	return rl
+	return l
 }
 
 // SetMessage sets the message for the final log entry and returns the logger for chaining.
-func (rl *RequestLogger) SetMessage(message string) *RequestLogger {
-	rl.message = message
-	return rl
+func (l *Logger) SetMessage(message string) *Logger {
+	l.message = message
+	return l
 }
 
-// Log outputs the accumulated request data in a single structured log line.
+// Flush outputs the accumulated data in a single structured log line.
 // It includes the duration since the logger was created, all accumulated fields,
 // and any errors that were added.
 //
-// This method is typically called in a defer statement to ensure the request
-// is logged even if the handler panics.
-func (rl *RequestLogger) Log(ctx context.Context) {
-	// Calculate request duration
-	duration := time.Since(rl.startTime)
+// This method is typically called in a defer statement to ensure logging
+// happens even if the handler panics.
+func (l *Logger) Flush(ctx context.Context) {
+	duration := time.Since(l.startTime)
 
-	// Build attributes
-	attrs := make([]slog.Attr, 0, len(rl.fields)+3)
+	attrs := make([]slog.Attr, 0, len(l.fields)+3)
 
-	// Add duration
 	attrs = append(attrs, slog.Duration("duration", duration))
 	attrs = append(attrs, slog.Int64("duration_ms", duration.Milliseconds()))
 
-	// Add all accumulated fields
-	for k, v := range rl.fields {
+	for k, v := range l.fields {
 		attrs = append(attrs, slog.Any(k, v))
 	}
 
-	// Add errors if any
-	if len(rl.errors) > 0 {
-		if len(rl.errors) == 1 {
-			attrs = append(attrs, slog.String("error", rl.errors[0].Error()))
+	if len(l.errors) > 0 {
+		if len(l.errors) == 1 {
+			attrs = append(attrs, slog.String("error", l.errors[0].Error()))
 		} else {
-			errorStrings := make([]string, len(rl.errors))
-			for i, err := range rl.errors {
+			errorStrings := make([]string, len(l.errors))
+			for i, err := range l.errors {
 				errorStrings[i] = err.Error()
 			}
 			attrs = append(attrs, slog.Any("errors", errorStrings))
 		}
 	}
 
-	// Log everything in one line
-	slog.LogAttrs(ctx, rl.level, rl.message, attrs...)
+	slog.LogAttrs(ctx, l.level, l.message, attrs...)
 }
 
-// NewRequestContext creates a new context with a request logger attached.
+// NewContext creates a new context with a logger attached.
 // This is typically called by middleware at the start of a request.
-func NewRequestContext(ctx context.Context) context.Context {
-	return context.WithValue(ctx, requestLoggerKey, NewRequestLogger())
+func NewContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, loggerKey, New())
 }
 
-// GetLogger retrieves the request logger from context.
+// GetLogger retrieves the logger from context.
 // If no logger exists in the context, it returns a new logger as a fallback.
-func GetLogger(ctx context.Context) *RequestLogger {
-	if rl, ok := ctx.Value(requestLoggerKey).(*RequestLogger); ok {
-		return rl
+func GetLogger(ctx context.Context) *Logger {
+	if l, ok := ctx.Value(loggerKey).(*Logger); ok {
+		return l
 	}
-	return NewRequestLogger()
+	return New()
 }
 
-// Set adds a field to the request logger stored in context.
-// This is the primary way to add context to a request during processing.
-//
-// Example:
-//
-//	canonlog.Set(ctx, "user_id", userID)
-func Set(ctx context.Context, key string, value interface{}) {
-	if rl := GetLogger(ctx); rl != nil {
-		rl.WithField(key, value)
-	}
+// DebugAdd adds a field to the logger in context if debug level is enabled.
+func DebugAdd(ctx context.Context, key string, value interface{}) {
+	GetLogger(ctx).DebugAdd(key, value)
 }
 
-// SetAll adds multiple fields to the request logger stored in context.
-//
-// Example:
-//
-//	canonlog.SetAll(ctx, map[string]any{
-//		"user_id": userID,
-//		"org_id": orgID,
-//	})
-func SetAll(ctx context.Context, fields map[string]interface{}) {
-	if rl := GetLogger(ctx); rl != nil {
-		rl.WithFields(fields)
-	}
+// DebugAddMany adds multiple fields to the logger in context if debug level is enabled.
+func DebugAddMany(ctx context.Context, fields map[string]interface{}) {
+	GetLogger(ctx).DebugAddMany(fields)
 }
 
-// SetError adds an error to the request logger stored in context.
-// This automatically sets the log level to ERROR and changes the message to "Request failed".
-//
-// Example:
-//
-//	if err := db.Query(ctx, ...); err != nil {
-//		canonlog.SetError(ctx, err)
-//		return err
-//	}
-func SetError(ctx context.Context, err error) {
-	if rl := GetLogger(ctx); rl != nil {
-		rl.WithError(err)
-	}
+// InfoAdd adds a field to the logger in context if info level is enabled.
+func InfoAdd(ctx context.Context, key string, value interface{}) {
+	GetLogger(ctx).InfoAdd(key, value)
 }
 
-// LogRequest logs the accumulated request data from the logger stored in context.
-// This is typically called in a defer statement by middleware, but can be called
-// manually if needed.
-func LogRequest(ctx context.Context) {
-	if rl := GetLogger(ctx); rl != nil {
-		rl.Log(ctx)
-	}
+// InfoAddMany adds multiple fields to the logger in context if info level is enabled.
+func InfoAddMany(ctx context.Context, fields map[string]interface{}) {
+	GetLogger(ctx).InfoAddMany(fields)
+}
+
+// WarnAdd adds a field to the logger in context if warn level is enabled.
+func WarnAdd(ctx context.Context, key string, value interface{}) {
+	GetLogger(ctx).WarnAdd(key, value)
+}
+
+// WarnAddMany adds multiple fields to the logger in context if warn level is enabled.
+func WarnAddMany(ctx context.Context, fields map[string]interface{}) {
+	GetLogger(ctx).WarnAddMany(fields)
+}
+
+// ErrorAdd adds a field to the logger in context if error level is enabled.
+func ErrorAdd(ctx context.Context, key string, value interface{}) {
+	GetLogger(ctx).ErrorAdd(key, value)
+}
+
+// ErrorAddMany adds multiple fields to the logger in context if error level is enabled.
+func ErrorAddMany(ctx context.Context, fields map[string]interface{}) {
+	GetLogger(ctx).ErrorAddMany(fields)
+}
+
+// Flush logs the accumulated data from the logger stored in context.
+// This is typically called in a defer statement by middleware.
+func Flush(ctx context.Context) {
+	GetLogger(ctx).Flush(ctx)
 }
