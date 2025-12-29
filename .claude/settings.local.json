@@ -5,7 +5,10 @@
       "WebFetch(domain:github.com)",
       "Bash(golangci-lint run:*)",
       "Bash(gh issue create:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(find:*)",
+      "Bash(tree:*)",
+      "Bash(go fmt:*)"
     ],
     "deny": [],
     "ask": []
