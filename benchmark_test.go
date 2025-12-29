@@ -44,17 +44,17 @@ func BenchmarkRequestLoggerWithFields(b *testing.B) {
 	}
 }
 
-func BenchmarkAddRequestField(b *testing.B) {
+func BenchmarkSet(b *testing.B) {
 	ctx := NewRequestContext(context.Background())
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		AddRequestField(ctx, "key", "value")
+		Set(ctx, "key", "value")
 	}
 }
 
-func BenchmarkAddRequestFields(b *testing.B) {
+func BenchmarkSetAll(b *testing.B) {
 	ctx := NewRequestContext(context.Background())
 	fields := map[string]interface{}{
 		"key1": "value1",
@@ -65,7 +65,7 @@ func BenchmarkAddRequestFields(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		AddRequestFields(ctx, fields)
+		SetAll(ctx, fields)
 	}
 }
 
@@ -105,23 +105,23 @@ func BenchmarkRequestLoggerLogWithError(b *testing.B) {
 	}
 }
 
-func BenchmarkGetRequestLogger(b *testing.B) {
+func BenchmarkGetLogger(b *testing.B) {
 	ctx := NewRequestContext(context.Background())
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_ = GetRequestLogger(ctx)
+		_ = GetLogger(ctx)
 	}
 }
 
-func BenchmarkGetRequestLoggerFallback(b *testing.B) {
+func BenchmarkGetLoggerFallback(b *testing.B) {
 	ctx := context.Background()
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_ = GetRequestLogger(ctx)
+		_ = GetLogger(ctx)
 	}
 }
 
@@ -133,12 +133,12 @@ func BenchmarkFullRequestCycle(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ctx := NewRequestContext(context.Background())
 
-		AddRequestField(ctx, "request_id", GenerateRequestID())
-		AddRequestField(ctx, "method", "GET")
-		AddRequestField(ctx, "path", "/api/users")
-		AddRequestFields(ctx, map[string]interface{}{
-			"user_id": "123",
-			"status": 200,
+		Set(ctx, "request_id", GenerateRequestID())
+		Set(ctx, "method", "GET")
+		Set(ctx, "path", "/api/users")
+		SetAll(ctx, map[string]interface{}{
+			"user_id":       "123",
+			"status":        200,
 			"response_size": 1024,
 		})
 

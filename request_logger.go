@@ -135,52 +135,52 @@ func NewRequestContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, requestLoggerKey, NewRequestLogger())
 }
 
-// GetRequestLogger retrieves the request logger from context.
+// GetLogger retrieves the request logger from context.
 // If no logger exists in the context, it returns a new logger as a fallback.
-func GetRequestLogger(ctx context.Context) *RequestLogger {
+func GetLogger(ctx context.Context) *RequestLogger {
 	if rl, ok := ctx.Value(requestLoggerKey).(*RequestLogger); ok {
 		return rl
 	}
 	return NewRequestLogger()
 }
 
-// AddRequestField adds a field to the request logger stored in context.
+// Set adds a field to the request logger stored in context.
 // This is the primary way to add context to a request during processing.
 //
 // Example:
 //
-//	canonlog.AddRequestField(ctx, "user_id", userID)
-func AddRequestField(ctx context.Context, key string, value interface{}) {
-	if rl := GetRequestLogger(ctx); rl != nil {
+//	canonlog.Set(ctx, "user_id", userID)
+func Set(ctx context.Context, key string, value interface{}) {
+	if rl := GetLogger(ctx); rl != nil {
 		rl.WithField(key, value)
 	}
 }
 
-// AddRequestFields adds multiple fields to the request logger stored in context.
+// SetAll adds multiple fields to the request logger stored in context.
 //
 // Example:
 //
-//	canonlog.AddRequestFields(ctx, map[string]any{
+//	canonlog.SetAll(ctx, map[string]any{
 //		"user_id": userID,
 //		"org_id": orgID,
 //	})
-func AddRequestFields(ctx context.Context, fields map[string]interface{}) {
-	if rl := GetRequestLogger(ctx); rl != nil {
+func SetAll(ctx context.Context, fields map[string]interface{}) {
+	if rl := GetLogger(ctx); rl != nil {
 		rl.WithFields(fields)
 	}
 }
 
-// AddRequestError adds an error to the request logger stored in context.
+// SetError adds an error to the request logger stored in context.
 // This automatically sets the log level to ERROR and changes the message to "Request failed".
 //
 // Example:
 //
 //	if err := db.Query(ctx, ...); err != nil {
-//		canonlog.AddRequestError(ctx, err)
+//		canonlog.SetError(ctx, err)
 //		return err
 //	}
-func AddRequestError(ctx context.Context, err error) {
-	if rl := GetRequestLogger(ctx); rl != nil {
+func SetError(ctx context.Context, err error) {
+	if rl := GetLogger(ctx); rl != nil {
 		rl.WithError(err)
 	}
 }
@@ -189,7 +189,7 @@ func AddRequestError(ctx context.Context, err error) {
 // This is typically called in a defer statement by middleware, but can be called
 // manually if needed.
 func LogRequest(ctx context.Context) {
-	if rl := GetRequestLogger(ctx); rl != nil {
+	if rl := GetLogger(ctx); rl != nil {
 		rl.Log(ctx)
 	}
 }

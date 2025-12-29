@@ -134,41 +134,41 @@ func TestNewRequestContext(t *testing.T) {
 	}
 }
 
-func TestGetRequestLogger(t *testing.T) {
+func TestGetLogger(t *testing.T) {
 	ctx := NewRequestContext(context.Background())
-	rl := GetRequestLogger(ctx)
+	rl := GetLogger(ctx)
 
 	if rl == nil {
-		t.Fatal("GetRequestLogger returned nil")
+		t.Fatal("GetLogger returned nil")
 	}
 
 	emptyCtx := context.Background()
-	rl2 := GetRequestLogger(emptyCtx)
+	rl2 := GetLogger(emptyCtx)
 
 	if rl2 == nil {
-		t.Fatal("GetRequestLogger should return a new logger if none exists")
+		t.Fatal("GetLogger should return a new logger if none exists")
 	}
 }
 
-func TestAddRequestField(t *testing.T) {
+func TestSet(t *testing.T) {
 	ctx := NewRequestContext(context.Background())
-	AddRequestField(ctx, "test_key", "test_value")
+	Set(ctx, "test_key", "test_value")
 
-	rl := GetRequestLogger(ctx)
+	rl := GetLogger(ctx)
 	if rl.fields["test_key"] != "test_value" {
 		t.Errorf("Expected field test_key=test_value, got %v", rl.fields["test_key"])
 	}
 }
 
-func TestAddRequestFields(t *testing.T) {
+func TestSetAll(t *testing.T) {
 	ctx := NewRequestContext(context.Background())
 	fields := map[string]interface{}{
 		"key1": "value1",
 		"key2": 456,
 	}
-	AddRequestFields(ctx, fields)
+	SetAll(ctx, fields)
 
-	rl := GetRequestLogger(ctx)
+	rl := GetLogger(ctx)
 	for k, v := range fields {
 		if rl.fields[k] != v {
 			t.Errorf("Expected field %s=%v, got %v", k, v, rl.fields[k])
@@ -176,12 +176,12 @@ func TestAddRequestFields(t *testing.T) {
 	}
 }
 
-func TestAddRequestError(t *testing.T) {
+func TestSetError(t *testing.T) {
 	ctx := NewRequestContext(context.Background())
 	err := errors.New("context error")
-	AddRequestError(ctx, err)
+	SetError(ctx, err)
 
-	rl := GetRequestLogger(ctx)
+	rl := GetLogger(ctx)
 	if len(rl.errors) != 1 {
 		t.Fatalf("Expected 1 error, got %d", len(rl.errors))
 	}

@@ -26,35 +26,35 @@ func ExampleRequestLogger() {
 	rl.WithField("user_id", "123")
 	rl.WithField("action", "create_order")
 	rl.WithFields(map[string]any{
-		"amount": 99.99,
+		"amount":   99.99,
 		"currency": "USD",
 	})
 
 	defer rl.Log(ctx)
 }
 
-func ExampleAddRequestField() {
+func ExampleSet() {
 	ctx := canonlog.NewRequestContext(context.Background())
 
-	canonlog.AddRequestField(ctx, "user_id", "123")
-	canonlog.AddRequestField(ctx, "action", "fetch_profile")
+	canonlog.Set(ctx, "user_id", "123")
+	canonlog.Set(ctx, "action", "fetch_profile")
 }
 
-func ExampleAddRequestFields() {
+func ExampleSetAll() {
 	ctx := canonlog.NewRequestContext(context.Background())
 
-	canonlog.AddRequestFields(ctx, map[string]any{
+	canonlog.SetAll(ctx, map[string]any{
 		"user_id": "123",
-		"org_id": "456",
-		"role": "admin",
+		"org_id":  "456",
+		"role":    "admin",
 	})
 }
 
-func ExampleAddRequestError() {
+func ExampleSetError() {
 	ctx := canonlog.NewRequestContext(context.Background())
 
 	err := fmt.Errorf("database connection failed")
-	canonlog.AddRequestError(ctx, err)
+	canonlog.SetError(ctx, err)
 }
 
 func ExampleMiddleware() {
@@ -65,10 +65,10 @@ func ExampleMiddleware() {
 	mux.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		canonlog.AddRequestField(ctx, "user_id", "123")
-		canonlog.AddRequestFields(ctx, map[string]any{
+		canonlog.Set(ctx, "user_id", "123")
+		canonlog.SetAll(ctx, map[string]any{
 			"action": "list_users",
-			"page": 1,
+			"page":   1,
 		})
 
 		w.WriteHeader(http.StatusOK)
@@ -106,7 +106,7 @@ func ExampleRequestLogger_chainable() {
 	rl.WithField("user_id", "123").
 		WithField("action", "login").
 		WithFields(map[string]any{
-			"ip": "192.168.1.1",
+			"ip":         "192.168.1.1",
 			"user_agent": "Mozilla/5.0",
 		})
 
