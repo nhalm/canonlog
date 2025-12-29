@@ -33,7 +33,7 @@ func Middleware(generator func() string) func(http.Handler) http.Handler {
 				requestID = generator()
 			}
 
-			canonlog.AddRequestFields(ctx, map[string]any{
+			canonlog.SetAll(ctx, map[string]any{
 				"requestID":  requestID,
 				"method":     r.Method,
 				"path":       r.URL.Path,
@@ -47,7 +47,7 @@ func Middleware(generator func() string) func(http.Handler) http.Handler {
 			ww := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 
 			defer func() {
-				canonlog.AddRequestFields(ctx, map[string]any{
+				canonlog.SetAll(ctx, map[string]any{
 					"status":        ww.status,
 					"response_size": ww.bytesWritten,
 				})
@@ -106,7 +106,7 @@ func ChiMiddleware(generator func() string) func(http.Handler) http.Handler {
 				requestID = generator()
 			}
 
-			canonlog.AddRequestFields(ctx, map[string]any{
+			canonlog.SetAll(ctx, map[string]any{
 				"requestID":  requestID,
 				"method":     r.Method,
 				"path":       r.URL.Path,
@@ -120,7 +120,7 @@ func ChiMiddleware(generator func() string) func(http.Handler) http.Handler {
 			ww := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 
 			defer func() {
-				canonlog.AddRequestFields(ctx, map[string]any{
+				canonlog.SetAll(ctx, map[string]any{
 					"status":        ww.status,
 					"response_size": ww.bytesWritten,
 				})

@@ -57,11 +57,11 @@ func main() {
 		ctx := r.Context()
 
 		// Add fields throughout request processing
-		canonlog.AddRequestField(ctx, "user_id", "123")
-		canonlog.AddRequestField(ctx, "action", "fetch_profile")
+		canonlog.Set(ctx, "user_id", "123")
+		canonlog.Set(ctx, "action", "fetch_profile")
 
 		// Add multiple fields at once
-		canonlog.AddRequestFields(ctx, map[string]any{
+		canonlog.SetAll(ctx, map[string]any{
 			"cache_hit": true,
 			"db_queries": 2,
 		})
@@ -102,7 +102,7 @@ func main() {
 		ctx := r.Context()
 		userID := chi.URLParam(r, "id")
 
-		canonlog.AddRequestField(ctx, "user_id", userID)
+		canonlog.Set(ctx, "user_id", userID)
 
 		w.Write([]byte("OK"))
 	})
@@ -167,11 +167,13 @@ time=2025-01-15T10:30:45Z level=INFO msg="Request completed" duration=45.2ms dur
 
 ### Context Helpers
 
-**`AddRequestField(ctx, key, value)`** - Add field to logger in context.
+**`Set(ctx, key, value)`** - Add field to logger in context.
 
-**`AddRequestFields(ctx, map[string]any)`** - Add multiple fields to logger in context.
+**`SetAll(ctx, map[string]any)`** - Add multiple fields to logger in context.
 
-**`AddRequestError(ctx, error)`** - Add error to logger in context.
+**`SetError(ctx, error)`** - Add error to logger in context.
+
+**`GetLogger(ctx) *RequestLogger`** - Retrieve logger from context.
 
 **`LogRequest(ctx)`** - Manually log accumulated data.
 
@@ -227,7 +229,7 @@ Use the request logger independently for background jobs, workers, or CLI tools:
 ```go
 func processJob(jobID string) error {
 	ctx := canonlog.NewRequestContext(context.Background())
-	rl := canonlog.GetRequestLogger(ctx)
+	rl := canonlog.GetLogger(ctx)
 
 	rl.WithField("job_id", jobID)
 	rl.WithField("worker", "background-processor")

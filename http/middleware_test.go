@@ -14,7 +14,7 @@ func TestMiddleware(t *testing.T) {
 	handler := Middleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		canonlog.AddRequestField(ctx, "test_field", "test_value")
+		canonlog.Set(ctx, "test_field", "test_value")
 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
@@ -131,9 +131,9 @@ func TestMiddlewareContextPropagation(t *testing.T) {
 
 	handler := Middleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		capturedCtx = canonlog.GetRequestLogger(ctx)
+		capturedCtx = canonlog.GetLogger(ctx)
 
-		canonlog.AddRequestField(ctx, "test", "value")
+		canonlog.Set(ctx, "test", "value")
 
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -152,7 +152,7 @@ func TestChiMiddleware(t *testing.T) {
 	handler := ChiMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		canonlog.AddRequestField(ctx, "test_field", "test_value")
+		canonlog.Set(ctx, "test_field", "test_value")
 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
