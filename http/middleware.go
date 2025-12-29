@@ -7,7 +7,7 @@ import (
 	"github.com/nhalm/canonlog"
 )
 
-// Middleware creates standard library HTTP middleware that sets up request-scoped logging.
+// Middleware creates standard library HTTP middleware that sets up canonical logging.
 // It accumulates request data throughout the request lifecycle and outputs a single log line at the end.
 //
 // The middleware:
@@ -26,14 +26,14 @@ func Middleware(generator func() string) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := canonlog.NewRequestContext(r.Context())
+			ctx := canonlog.NewContext(r.Context())
 
 			requestID := r.Header.Get("X-Request-ID")
 			if requestID == "" {
 				requestID = generator()
 			}
 
-			canonlog.SetAll(ctx, map[string]any{
+			canonlog.InfoAddMany(ctx, map[string]any{
 				"requestID":  requestID,
 				"method":     r.Method,
 				"path":       r.URL.Path,
@@ -47,11 +47,11 @@ func Middleware(generator func() string) func(http.Handler) http.Handler {
 			ww := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 
 			defer func() {
-				canonlog.SetAll(ctx, map[string]any{
+				canonlog.InfoAddMany(ctx, map[string]any{
 					"status":        ww.status,
 					"response_size": ww.bytesWritten,
 				})
-				canonlog.LogRequest(ctx)
+				canonlog.Flush(ctx)
 			}()
 
 			next.ServeHTTP(ww, r.WithContext(ctx))
@@ -96,7 +96,7 @@ func ChiMiddleware(generator func() string) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := canonlog.NewRequestContext(r.Context())
+			ctx := canonlog.NewContext(r.Context())
 
 			requestID := middleware.GetReqID(ctx)
 			if requestID == "" {
@@ -106,7 +106,7 @@ func ChiMiddleware(generator func() string) func(http.Handler) http.Handler {
 				requestID = generator()
 			}
 
-			canonlog.SetAll(ctx, map[string]any{
+			canonlog.InfoAddMany(ctx, map[string]any{
 				"requestID":  requestID,
 				"method":     r.Method,
 				"path":       r.URL.Path,
@@ -120,11 +120,11 @@ func ChiMiddleware(generator func() string) func(http.Handler) http.Handler {
 			ww := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 
 			defer func() {
-				canonlog.SetAll(ctx, map[string]any{
+				canonlog.InfoAddMany(ctx, map[string]any{
 					"status":        ww.status,
 					"response_size": ww.bytesWritten,
 				})
-				canonlog.LogRequest(ctx)
+				canonlog.Flush(ctx)
 			}()
 
 			next.ServeHTTP(ww, r.WithContext(ctx))
