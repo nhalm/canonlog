@@ -47,7 +47,7 @@ import (
 
 func main() {
 	// Setup global logger (optional - uses slog defaults if not called)
-	canonlog.SetupGlobalLogger("info", "json")
+	canonlog.SetupGlobalLogger("info", "text")
 
 	mux := http.NewServeMux()
 
@@ -89,7 +89,7 @@ import (
 )
 
 func main() {
-	canonlog.SetupGlobalLogger("info", "json")
+	canonlog.SetupGlobalLogger("info", "text")
 
 	r := chi.NewRouter()
 
@@ -117,7 +117,7 @@ func main() {
 Canonlog supports level-gated accumulation. Fields are only accumulated if the configured log level allows:
 
 ```go
-canonlog.SetupGlobalLogger("info", "json")  // Only info and above
+canonlog.SetupGlobalLogger("info", "text")  // Only info and above
 
 canonlog.DebugAdd(ctx, "debug_field", "value")  // Ignored - level too low
 canonlog.InfoAdd(ctx, "info_field", "value")    // Accumulated
@@ -128,6 +128,12 @@ canonlog.ErrorAdd(ctx, "error_field", "value")  // Accumulated, escalates level 
 The final log is emitted at the highest accumulated level. If you call `ErrorAdd`, the log will be emitted at ERROR level regardless of other fields.
 
 ## Example Output
+
+### Text Format (default)
+
+```
+time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=45 requestID=018e8e9e-45a1-7000-8000-123456789abc method=GET path=/api/users/123 user_agent=Mozilla/5.0... remote_ip=192.168.1.1:54321 host=api.example.com status=200 response_size=1024 user_id=123 action=fetch_profile cache_hit=true db_queries=2
+```
 
 ### JSON Format
 
@@ -153,17 +159,11 @@ The final log is emitted at the highest accumulated level. If you call `ErrorAdd
 }
 ```
 
-### Text (logfmt) Format
-
-```
-time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=45 requestID=018e8e9e-45a1-7000-8000-123456789abc method=GET path=/api/users/123 user_agent=Mozilla/5.0... remote_ip=192.168.1.1:54321 host=api.example.com status=200 response_size=1024 user_id=123 action=fetch_profile cache_hit=true db_queries=2
-```
-
 ## API Reference
 
 ### Core
 
-**`SetupGlobalLogger(logLevel, logFormat string)`** - Configure global slog logger. Levels: "debug", "info", "warn", "error". Formats: "json", "text".
+**`SetupGlobalLogger(logLevel, logFormat string)`** - Configure global slog logger. Levels: "debug", "info", "warn", "error". Formats: "text" (default), "json".
 
 **`GenerateRequestID() string`** - Generate UUIDv7 request ID.
 
