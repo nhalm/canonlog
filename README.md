@@ -195,6 +195,8 @@ time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=4
 
 **`NewContext(ctx) context.Context`** - Create context with new logger.
 
+**`GetLogger(ctx) *Logger`** - Retrieve logger from context for chaining.
+
 **`DebugAdd(ctx, key, value)`** - Add field at debug level.
 
 **`DebugAddMany(ctx, map[string]any)`** - Add multiple fields at debug level.
@@ -262,16 +264,15 @@ All fields accumulate and are emitted in a single log line when the middleware f
 
 ## Non-HTTP Usage
 
-Use the logger independently for background jobs, workers, or CLI tools:
+Use canonlog for background jobs, workers, or CLI tools:
 
 ```go
 func processJob(jobID string) error {
 	ctx := canonlog.NewContext(context.Background())
+	defer canonlog.Flush(ctx)
 
 	canonlog.InfoAdd(ctx, "job_id", jobID)
 	canonlog.InfoAdd(ctx, "worker", "background-processor")
-
-	defer canonlog.Flush(ctx)
 
 	recordsProcessed := 0
 	for i := 0; i < 1500; i++ {
@@ -284,24 +285,52 @@ func processJob(jobID string) error {
 }
 ```
 
-Or use the Logger directly:
+### Batch Processing
+
+For jobs that process multiple items and need separate log lines per item:
 
 ```go
-func processJob(jobID string) error {
-	ctx := context.Background()
-	l := canonlog.New()
+func processBatches(ctx context.Context, batches []Batch) error {
+	for _, batch := range batches {
+		batchCtx := canonlog.NewContext(ctx)
 
-	l.InfoAdd("job_id", jobID).
-		InfoAdd("worker", "background-processor")
+		canonlog.InfoAdd(batchCtx, "batch_id", batch.ID)
+		canonlog.InfoAdd(batchCtx, "size", len(batch.Items))
 
-	defer l.Flush(ctx)
+		if err := processBatch(batchCtx, batch); err != nil {
+			canonlog.ErrorAdd(batchCtx, err)
+		}
 
-	// ... processing ...
-
-	l.InfoAdd("records_processed", recordsProcessed)
+		canonlog.Flush(batchCtx)  // Emit log line for this batch
+	}
 	return nil
 }
 ```
+
+Each `NewContext` creates a fresh logger. The parent context's deadlines and cancellation propagate, but each batch gets independent logging.
+
+### Using GetLogger for Chaining
+
+Use `GetLogger` when you want to chain multiple field additions:
+
+```go
+func handleRequest(ctx context.Context, req *Request) {
+	// Context helpers - one call at a time
+	canonlog.InfoAdd(ctx, "user_id", req.UserID)
+	canonlog.InfoAdd(ctx, "action", req.Action)
+
+	// GetLogger - chain multiple additions
+	canonlog.GetLogger(ctx).
+		InfoAdd("ip", req.RemoteAddr).
+		InfoAdd("user_agent", req.UserAgent).
+		InfoAddMany(map[string]any{
+			"method": req.Method,
+			"path":   req.Path,
+		})
+}
+```
+
+Both approaches modify the same logger in the context.
 
 ## License
 

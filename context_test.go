@@ -208,17 +208,17 @@ func TestNewContext(t *testing.T) {
 
 func TestGetLogger(t *testing.T) {
 	ctx := NewContext(context.Background())
-	l := getLogger(ctx)
+	l := GetLogger(ctx)
 
 	if l == nil {
-		t.Fatal("getLogger returned nil")
+		t.Fatal("GetLogger returned nil")
 	}
 
 	emptyCtx := context.Background()
-	l2 := getLogger(emptyCtx)
+	l2 := GetLogger(emptyCtx)
 
 	if l2 == nil {
-		t.Fatal("getLogger should return a new logger if none exists")
+		t.Fatal("GetLogger should return a new logger if none exists")
 	}
 }
 
@@ -230,7 +230,7 @@ func TestInfoAdd_ContextHelper(t *testing.T) {
 	ctx := NewContext(context.Background())
 	InfoAdd(ctx, "test_key", "test_value")
 
-	l := getLogger(ctx)
+	l := GetLogger(ctx)
 	if l.fields["test_key"] != "test_value" {
 		t.Errorf("Expected field test_key=test_value, got %v", l.fields["test_key"])
 	}
@@ -248,7 +248,7 @@ func TestInfoAddMany_ContextHelper(t *testing.T) {
 	}
 	InfoAddMany(ctx, fields)
 
-	l := getLogger(ctx)
+	l := GetLogger(ctx)
 	for k, v := range fields {
 		if l.fields[k] != v {
 			t.Errorf("Expected field %s=%v, got %v", k, v, l.fields[k])
@@ -265,7 +265,7 @@ func TestErrorAdd_ContextHelper(t *testing.T) {
 	err := errors.New("context error")
 	ErrorAdd(ctx, err)
 
-	l := getLogger(ctx)
+	l := GetLogger(ctx)
 	if len(l.errors) != 1 {
 		t.Fatalf("Expected 1 error, got %d", len(l.errors))
 	}

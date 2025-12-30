@@ -116,7 +116,7 @@ func BenchmarkGetLogger(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_ = getLogger(ctx)
+		_ = GetLogger(ctx)
 	}
 }
 
@@ -126,7 +126,7 @@ func BenchmarkGetLoggerFallback(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_ = getLogger(ctx)
+		_ = GetLogger(ctx)
 	}
 }
 

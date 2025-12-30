@@ -148,9 +148,14 @@ func NewContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, loggerKey, New())
 }
 
-// getLogger retrieves the logger from context.
+// GetLogger retrieves the logger from context.
 // If no logger exists in the context, it returns a new logger as a fallback.
-func getLogger(ctx context.Context) *Logger {
+// Use this when you want to chain multiple field additions:
+//
+//	canonlog.GetLogger(ctx).
+//		InfoAdd("user_id", "123").
+//		InfoAdd("action", "login")
+func GetLogger(ctx context.Context) *Logger {
 	if l, ok := ctx.Value(loggerKey).(*Logger); ok {
 		return l
 	}
@@ -159,41 +164,41 @@ func getLogger(ctx context.Context) *Logger {
 
 // DebugAdd adds a field to the logger in context if debug level is enabled.
 func DebugAdd(ctx context.Context, key string, value any) {
-	getLogger(ctx).DebugAdd(key, value)
+	GetLogger(ctx).DebugAdd(key, value)
 }
 
 // DebugAddMany adds multiple fields to the logger in context if debug level is enabled.
 func DebugAddMany(ctx context.Context, fields map[string]any) {
-	getLogger(ctx).DebugAddMany(fields)
+	GetLogger(ctx).DebugAddMany(fields)
 }
 
 // InfoAdd adds a field to the logger in context if info level is enabled.
 func InfoAdd(ctx context.Context, key string, value any) {
-	getLogger(ctx).InfoAdd(key, value)
+	GetLogger(ctx).InfoAdd(key, value)
 }
 
 // InfoAddMany adds multiple fields to the logger in context if info level is enabled.
 func InfoAddMany(ctx context.Context, fields map[string]any) {
-	getLogger(ctx).InfoAddMany(fields)
+	GetLogger(ctx).InfoAddMany(fields)
 }
 
 // WarnAdd adds a field to the logger in context if warn level is enabled.
 func WarnAdd(ctx context.Context, key string, value any) {
-	getLogger(ctx).WarnAdd(key, value)
+	GetLogger(ctx).WarnAdd(key, value)
 }
 
 // WarnAddMany adds multiple fields to the logger in context if warn level is enabled.
 func WarnAddMany(ctx context.Context, fields map[string]any) {
-	getLogger(ctx).WarnAddMany(fields)
+	GetLogger(ctx).WarnAddMany(fields)
 }
 
 // ErrorAdd appends an error to the logger in context and sets level to Error.
 func ErrorAdd(ctx context.Context, err error) {
-	getLogger(ctx).ErrorAdd(err)
+	GetLogger(ctx).ErrorAdd(err)
 }
 
 // Flush logs the accumulated data from the logger stored in context.
 // This is typically called in a defer statement by middleware.
 func Flush(ctx context.Context) {
-	getLogger(ctx).Flush(ctx)
+	GetLogger(ctx).Flush(ctx)
 }
