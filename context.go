@@ -22,8 +22,8 @@ const loggerKey loggerKeyType = "canonlogger"
 //	defer log.Flush(ctx)
 type Logger struct {
 	startTime time.Time
-	fields    map[string]interface{}
-	errors    []error
+	fields    map[string]any
+	errors    []string
 	level     slog.Level
 	message   string
 }
@@ -33,15 +33,14 @@ type Logger struct {
 func New() *Logger {
 	return &Logger{
 		startTime: time.Now(),
-		fields:    make(map[string]interface{}),
-		errors:    make([]error, 0),
+		fields:    make(map[string]any),
 		level:     slog.LevelInfo,
 		message:   "Completed",
 	}
 }
 
 // DebugAdd adds a field if debug level is enabled.
-func (l *Logger) DebugAdd(key string, value interface{}) *Logger {
+func (l *Logger) DebugAdd(key string, value any) *Logger {
 	if logLevel <= slog.LevelDebug {
 		l.fields[key] = value
 	}
@@ -49,7 +48,7 @@ func (l *Logger) DebugAdd(key string, value interface{}) *Logger {
 }
 
 // DebugAddMany adds multiple fields if debug level is enabled.
-func (l *Logger) DebugAddMany(fields map[string]interface{}) *Logger {
+func (l *Logger) DebugAddMany(fields map[string]any) *Logger {
 	if logLevel <= slog.LevelDebug {
 		for k, v := range fields {
 			l.fields[k] = v
@@ -59,7 +58,7 @@ func (l *Logger) DebugAddMany(fields map[string]interface{}) *Logger {
 }
 
 // InfoAdd adds a field if info level is enabled.
-func (l *Logger) InfoAdd(key string, value interface{}) *Logger {
+func (l *Logger) InfoAdd(key string, value any) *Logger {
 	if logLevel <= slog.LevelInfo {
 		l.fields[key] = value
 	}
@@ -67,7 +66,7 @@ func (l *Logger) InfoAdd(key string, value interface{}) *Logger {
 }
 
 // InfoAddMany adds multiple fields if info level is enabled.
-func (l *Logger) InfoAddMany(fields map[string]interface{}) *Logger {
+func (l *Logger) InfoAddMany(fields map[string]any) *Logger {
 	if logLevel <= slog.LevelInfo {
 		for k, v := range fields {
 			l.fields[k] = v
@@ -77,7 +76,7 @@ func (l *Logger) InfoAddMany(fields map[string]interface{}) *Logger {
 }
 
 // WarnAdd adds a field if warn level is enabled and sets level to at least Warn.
-func (l *Logger) WarnAdd(key string, value interface{}) *Logger {
+func (l *Logger) WarnAdd(key string, value any) *Logger {
 	if logLevel <= slog.LevelWarn {
 		l.fields[key] = value
 		if l.level < slog.LevelWarn {
@@ -88,7 +87,7 @@ func (l *Logger) WarnAdd(key string, value interface{}) *Logger {
 }
 
 // WarnAddMany adds multiple fields if warn level is enabled and sets level to at least Warn.
-func (l *Logger) WarnAddMany(fields map[string]interface{}) *Logger {
+func (l *Logger) WarnAddMany(fields map[string]any) *Logger {
 	if logLevel <= slog.LevelWarn {
 		for k, v := range fields {
 			l.fields[k] = v
@@ -100,34 +99,14 @@ func (l *Logger) WarnAddMany(fields map[string]interface{}) *Logger {
 	return l
 }
 
-// ErrorAdd adds a field if error level is enabled and sets level to Error.
-func (l *Logger) ErrorAdd(key string, value interface{}) *Logger {
-	if logLevel <= slog.LevelError {
-		l.fields[key] = value
-		l.level = slog.LevelError
-	}
-	return l
-}
-
-// ErrorAddMany adds multiple fields if error level is enabled and sets level to Error.
-func (l *Logger) ErrorAddMany(fields map[string]interface{}) *Logger {
-	if logLevel <= slog.LevelError {
-		for k, v := range fields {
-			l.fields[k] = v
+// ErrorAdd appends an error to the errors slice and sets level to Error.
+// All errors are output as an "errors" array in the final log entry.
+func (l *Logger) ErrorAdd(err error) *Logger {
+	if err != nil && logLevel <= slog.LevelError {
+		l.errors = append(l.errors, err.Error())
+		if l.level < slog.LevelError {
+			l.level = slog.LevelError
 		}
-		l.level = slog.LevelError
-	}
-	return l
-}
-
-// WithError adds an error, sets the log level to ERROR,
-// and changes the message to "Failed". Returns the logger for chaining.
-// Multiple errors can be added and will all be logged together.
-func (l *Logger) WithError(err error) *Logger {
-	if err != nil {
-		l.errors = append(l.errors, err)
-		l.level = slog.LevelError
-		l.message = "Failed"
 	}
 	return l
 }
@@ -157,15 +136,7 @@ func (l *Logger) Flush(ctx context.Context) {
 	}
 
 	if len(l.errors) > 0 {
-		if len(l.errors) == 1 {
-			attrs = append(attrs, slog.String("error", l.errors[0].Error()))
-		} else {
-			errorStrings := make([]string, len(l.errors))
-			for i, err := range l.errors {
-				errorStrings[i] = err.Error()
-			}
-			attrs = append(attrs, slog.Any("errors", errorStrings))
-		}
+		attrs = append(attrs, slog.Any("errors", l.errors))
 	}
 
 	slog.LogAttrs(ctx, l.level, l.message, attrs...)
@@ -177,9 +148,9 @@ func NewContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, loggerKey, New())
 }
 
-// GetLogger retrieves the logger from context.
+// getLogger retrieves the logger from context.
 // If no logger exists in the context, it returns a new logger as a fallback.
-func GetLogger(ctx context.Context) *Logger {
+func getLogger(ctx context.Context) *Logger {
 	if l, ok := ctx.Value(loggerKey).(*Logger); ok {
 		return l
 	}
@@ -187,47 +158,42 @@ func GetLogger(ctx context.Context) *Logger {
 }
 
 // DebugAdd adds a field to the logger in context if debug level is enabled.
-func DebugAdd(ctx context.Context, key string, value interface{}) {
-	GetLogger(ctx).DebugAdd(key, value)
+func DebugAdd(ctx context.Context, key string, value any) {
+	getLogger(ctx).DebugAdd(key, value)
 }
 
 // DebugAddMany adds multiple fields to the logger in context if debug level is enabled.
-func DebugAddMany(ctx context.Context, fields map[string]interface{}) {
-	GetLogger(ctx).DebugAddMany(fields)
+func DebugAddMany(ctx context.Context, fields map[string]any) {
+	getLogger(ctx).DebugAddMany(fields)
 }
 
 // InfoAdd adds a field to the logger in context if info level is enabled.
-func InfoAdd(ctx context.Context, key string, value interface{}) {
-	GetLogger(ctx).InfoAdd(key, value)
+func InfoAdd(ctx context.Context, key string, value any) {
+	getLogger(ctx).InfoAdd(key, value)
 }
 
 // InfoAddMany adds multiple fields to the logger in context if info level is enabled.
-func InfoAddMany(ctx context.Context, fields map[string]interface{}) {
-	GetLogger(ctx).InfoAddMany(fields)
+func InfoAddMany(ctx context.Context, fields map[string]any) {
+	getLogger(ctx).InfoAddMany(fields)
 }
 
 // WarnAdd adds a field to the logger in context if warn level is enabled.
-func WarnAdd(ctx context.Context, key string, value interface{}) {
-	GetLogger(ctx).WarnAdd(key, value)
+func WarnAdd(ctx context.Context, key string, value any) {
+	getLogger(ctx).WarnAdd(key, value)
 }
 
 // WarnAddMany adds multiple fields to the logger in context if warn level is enabled.
-func WarnAddMany(ctx context.Context, fields map[string]interface{}) {
-	GetLogger(ctx).WarnAddMany(fields)
+func WarnAddMany(ctx context.Context, fields map[string]any) {
+	getLogger(ctx).WarnAddMany(fields)
 }
 
-// ErrorAdd adds a field to the logger in context if error level is enabled.
-func ErrorAdd(ctx context.Context, key string, value interface{}) {
-	GetLogger(ctx).ErrorAdd(key, value)
-}
-
-// ErrorAddMany adds multiple fields to the logger in context if error level is enabled.
-func ErrorAddMany(ctx context.Context, fields map[string]interface{}) {
-	GetLogger(ctx).ErrorAddMany(fields)
+// ErrorAdd appends an error to the logger in context and sets level to Error.
+func ErrorAdd(ctx context.Context, err error) {
+	getLogger(ctx).ErrorAdd(err)
 }
 
 // Flush logs the accumulated data from the logger stored in context.
 // This is typically called in a defer statement by middleware.
 func Flush(ctx context.Context) {
-	GetLogger(ctx).Flush(ctx)
+	getLogger(ctx).Flush(ctx)
 }

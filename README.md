@@ -122,10 +122,10 @@ canonlog.SetupGlobalLogger("info", "text")  // Only info and above
 canonlog.DebugAdd(ctx, "debug_field", "value")  // Ignored - level too low
 canonlog.InfoAdd(ctx, "info_field", "value")    // Accumulated
 canonlog.WarnAdd(ctx, "warn_field", "value")    // Accumulated, escalates level to Warn
-canonlog.ErrorAdd(ctx, "error_field", "value")  // Accumulated, escalates level to Error
+canonlog.ErrorAdd(ctx, err)                     // Appended to errors array, escalates level to Error
 ```
 
-The final log is emitted at the highest accumulated level. If you call `ErrorAdd`, the log will be emitted at ERROR level regardless of other fields.
+The final log is emitted at the highest accumulated level. If you call `ErrorAdd`, the log will be emitted at ERROR level regardless of other fields. All errors are collected in an `errors` array for consistent querying.
 
 ## Example Output
 
@@ -185,11 +185,7 @@ time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=4
 
 **`(*Logger).WarnAddMany(map[string]any) *Logger`** - Add multiple fields at warn level, escalates log level (chainable).
 
-**`(*Logger).ErrorAdd(key, value) *Logger`** - Add field at error level, escalates log level (chainable).
-
-**`(*Logger).ErrorAddMany(map[string]any) *Logger`** - Add multiple fields at error level, escalates log level (chainable).
-
-**`(*Logger).WithError(error) *Logger`** - Add error, sets level to error (chainable).
+**`(*Logger).ErrorAdd(err error) *Logger`** - Append error to errors array, escalates log level (chainable).
 
 **`(*Logger).SetMessage(string) *Logger`** - Set custom log message (chainable).
 
@@ -198,8 +194,6 @@ time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=4
 ### Context Helpers
 
 **`NewContext(ctx) context.Context`** - Create context with new logger.
-
-**`GetLogger(ctx) *Logger`** - Retrieve logger from context (creates new if none exists).
 
 **`DebugAdd(ctx, key, value)`** - Add field at debug level.
 
@@ -213,11 +207,7 @@ time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=4
 
 **`WarnAddMany(ctx, map[string]any)`** - Add multiple fields at warn level.
 
-**`ErrorAdd(ctx, key, value)`** - Add field at error level.
-
-**`ErrorAddMany(ctx, map[string]any)`** - Add multiple fields at error level.
-
-**`WithError(ctx, error)`** - Add error to logger in context.
+**`ErrorAdd(ctx, err error)`** - Append error to errors array, escalates log level.
 
 **`Flush(ctx)`** - Emit accumulated log entry.
 
@@ -241,7 +231,7 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.userService.GetByID(ctx, userID)
 	if err != nil {
-		canonlog.WithError(ctx, err)
+		canonlog.ErrorAdd(ctx, err)
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}

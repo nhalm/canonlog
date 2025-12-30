@@ -2,6 +2,7 @@ package canonlog_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -53,7 +54,7 @@ func ExampleInfoAddMany() {
 func ExampleErrorAdd() {
 	ctx := canonlog.NewContext(context.Background())
 
-	canonlog.ErrorAdd(ctx, "payment_status", "failed")
+	canonlog.ErrorAdd(ctx, errors.New("payment failed"))
 }
 
 func ExampleMiddleware() {

@@ -40,7 +40,7 @@ func BenchmarkLoggerInfoAddMany(b *testing.B) {
 	defer func() { logLevel = oldLevel }()
 
 	l := New()
-	fields := map[string]interface{}{
+	fields := map[string]any{
 		"key1": "value1",
 		"key2": "value2",
 		"key3": "value3",
@@ -73,7 +73,7 @@ func BenchmarkInfoAddMany(b *testing.B) {
 	defer func() { logLevel = oldLevel }()
 
 	ctx := NewContext(context.Background())
-	fields := map[string]interface{}{
+	fields := map[string]any{
 		"key1": "value1",
 		"key2": "value2",
 		"key3": "value3",
@@ -101,27 +101,11 @@ func BenchmarkLoggerFlush(b *testing.B) {
 		l := New()
 		l.InfoAdd("user_id", "123")
 		l.InfoAdd("action", "test")
-		l.InfoAddMany(map[string]interface{}{
+		l.InfoAddMany(map[string]any{
 			"key1": "value1",
 			"key2": 123,
 			"key3": true,
 		})
-		l.Flush(ctx)
-	}
-}
-
-func BenchmarkLoggerFlushWithError(b *testing.B) {
-	ctx := context.Background()
-	SetupGlobalLogger("error", "json")
-	testErr := context.DeadlineExceeded
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		l := New()
-		l.InfoAdd("user_id", "123")
-		l.WithError(testErr)
 		l.Flush(ctx)
 	}
 }
@@ -132,7 +116,7 @@ func BenchmarkGetLogger(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_ = GetLogger(ctx)
+		_ = getLogger(ctx)
 	}
 }
 
@@ -142,7 +126,7 @@ func BenchmarkGetLoggerFallback(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_ = GetLogger(ctx)
+		_ = getLogger(ctx)
 	}
 }
 
@@ -161,7 +145,7 @@ func BenchmarkFullRequestCycle(b *testing.B) {
 		InfoAdd(ctx, "request_id", GenerateRequestID())
 		InfoAdd(ctx, "method", "GET")
 		InfoAdd(ctx, "path", "/api/users")
-		InfoAddMany(ctx, map[string]interface{}{
+		InfoAddMany(ctx, map[string]any{
 			"user_id":       "123",
 			"status":        200,
 			"response_size": 1024,

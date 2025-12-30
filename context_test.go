@@ -18,10 +18,6 @@ func TestNew(t *testing.T) {
 		t.Error("fields map not initialized")
 	}
 
-	if l.errors == nil {
-		t.Error("errors slice not initialized")
-	}
-
 	if l.level != slog.LevelInfo {
 		t.Errorf("Expected default level Info, got %v", l.level)
 	}
@@ -95,14 +91,60 @@ func TestLoggerErrorAdd(t *testing.T) {
 	defer func() { logLevel = oldLevel }()
 
 	l := New()
-	l.ErrorAdd("key1", "value1")
+	err := errors.New("test error")
+	l.ErrorAdd(err)
 
-	if l.fields["key1"] != "value1" {
-		t.Errorf("Expected field key1=value1, got %v", l.fields["key1"])
+	if len(l.errors) != 1 {
+		t.Fatalf("Expected 1 error, got %d", len(l.errors))
+	}
+
+	if l.errors[0] != "test error" {
+		t.Errorf("Expected error 'test error', got %v", l.errors[0])
 	}
 
 	if l.level != slog.LevelError {
 		t.Errorf("Expected level Error after ErrorAdd, got %v", l.level)
+	}
+}
+
+func TestLoggerErrorAddMultiple(t *testing.T) {
+	oldLevel := logLevel
+	logLevel = slog.LevelError
+	defer func() { logLevel = oldLevel }()
+
+	l := New()
+	err1 := errors.New("error 1")
+	err2 := errors.New("error 2")
+
+	l.ErrorAdd(err1).ErrorAdd(err2)
+
+	if len(l.errors) != 2 {
+		t.Fatalf("Expected 2 errors, got %d", len(l.errors))
+	}
+
+	if l.errors[0] != "error 1" {
+		t.Errorf("Expected first error 'error 1', got %v", l.errors[0])
+	}
+
+	if l.errors[1] != "error 2" {
+		t.Errorf("Expected second error 'error 2', got %v", l.errors[1])
+	}
+}
+
+func TestLoggerErrorAddNil(t *testing.T) {
+	oldLevel := logLevel
+	logLevel = slog.LevelError
+	defer func() { logLevel = oldLevel }()
+
+	l := New()
+	l.ErrorAdd(nil)
+
+	if len(l.errors) != 0 {
+		t.Errorf("Expected 0 errors after adding nil, got %d", len(l.errors))
+	}
+
+	if l.level != slog.LevelInfo {
+		t.Errorf("Expected level to remain Info after nil error, got %v", l.level)
 	}
 }
 
@@ -112,7 +154,7 @@ func TestLoggerAddMany(t *testing.T) {
 	defer func() { logLevel = oldLevel }()
 
 	l := New()
-	fields := map[string]interface{}{
+	fields := map[string]any{
 		"key1": "value1",
 		"key2": 123,
 		"key3": true,
@@ -123,40 +165,6 @@ func TestLoggerAddMany(t *testing.T) {
 		if l.fields[k] != v {
 			t.Errorf("Expected field %s=%v, got %v", k, v, l.fields[k])
 		}
-	}
-}
-
-func TestLoggerWithError(t *testing.T) {
-	l := New()
-	err := errors.New("test error")
-	l.WithError(err)
-
-	if len(l.errors) != 1 {
-		t.Fatalf("Expected 1 error, got %d", len(l.errors))
-	}
-
-	if l.errors[0] != err {
-		t.Errorf("Expected error %v, got %v", err, l.errors[0])
-	}
-
-	if l.level != slog.LevelError {
-		t.Errorf("Expected level Error after WithError, got %v", l.level)
-	}
-
-	if l.message != "Failed" {
-		t.Errorf("Expected message 'Failed', got %s", l.message)
-	}
-}
-
-func TestLoggerWithMultipleErrors(t *testing.T) {
-	l := New()
-	err1 := errors.New("error 1")
-	err2 := errors.New("error 2")
-
-	l.WithError(err1).WithError(err2)
-
-	if len(l.errors) != 2 {
-		t.Fatalf("Expected 2 errors, got %d", len(l.errors))
 	}
 }
 
@@ -200,17 +208,17 @@ func TestNewContext(t *testing.T) {
 
 func TestGetLogger(t *testing.T) {
 	ctx := NewContext(context.Background())
-	l := GetLogger(ctx)
+	l := getLogger(ctx)
 
 	if l == nil {
-		t.Fatal("GetLogger returned nil")
+		t.Fatal("getLogger returned nil")
 	}
 
 	emptyCtx := context.Background()
-	l2 := GetLogger(emptyCtx)
+	l2 := getLogger(emptyCtx)
 
 	if l2 == nil {
-		t.Fatal("GetLogger should return a new logger if none exists")
+		t.Fatal("getLogger should return a new logger if none exists")
 	}
 }
 
@@ -222,7 +230,7 @@ func TestInfoAdd_ContextHelper(t *testing.T) {
 	ctx := NewContext(context.Background())
 	InfoAdd(ctx, "test_key", "test_value")
 
-	l := GetLogger(ctx)
+	l := getLogger(ctx)
 	if l.fields["test_key"] != "test_value" {
 		t.Errorf("Expected field test_key=test_value, got %v", l.fields["test_key"])
 	}
@@ -234,13 +242,13 @@ func TestInfoAddMany_ContextHelper(t *testing.T) {
 	defer func() { logLevel = oldLevel }()
 
 	ctx := NewContext(context.Background())
-	fields := map[string]interface{}{
+	fields := map[string]any{
 		"key1": "value1",
 		"key2": 456,
 	}
 	InfoAddMany(ctx, fields)
 
-	l := GetLogger(ctx)
+	l := getLogger(ctx)
 	for k, v := range fields {
 		if l.fields[k] != v {
 			t.Errorf("Expected field %s=%v, got %v", k, v, l.fields[k])
@@ -254,11 +262,16 @@ func TestErrorAdd_ContextHelper(t *testing.T) {
 	defer func() { logLevel = oldLevel }()
 
 	ctx := NewContext(context.Background())
-	ErrorAdd(ctx, "error_key", "error_value")
+	err := errors.New("context error")
+	ErrorAdd(ctx, err)
 
-	l := GetLogger(ctx)
-	if l.fields["error_key"] != "error_value" {
-		t.Errorf("Expected field error_key=error_value, got %v", l.fields["error_key"])
+	l := getLogger(ctx)
+	if len(l.errors) != 1 {
+		t.Fatalf("Expected 1 error, got %d", len(l.errors))
+	}
+
+	if l.errors[0] != "context error" {
+		t.Errorf("Expected error 'context error', got %v", l.errors[0])
 	}
 
 	if l.level != slog.LevelError {
@@ -287,7 +300,7 @@ func TestHighestLevelTracking(t *testing.T) {
 		t.Errorf("Expected level Warn after WarnAdd, got %v", l.level)
 	}
 
-	l.ErrorAdd("error", "value")
+	l.ErrorAdd(errors.New("error"))
 	if l.level != slog.LevelError {
 		t.Errorf("Expected level Error after ErrorAdd, got %v", l.level)
 	}
