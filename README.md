@@ -127,6 +127,25 @@ canonlog.ErrorAdd(ctx, err)                     // Appended to errors array, esc
 
 The final log is emitted at the highest accumulated level. If you call `ErrorAdd`, the log will be emitted at ERROR level regardless of other fields. All errors are collected in an `errors` array for consistent querying.
 
+**Important:** If you set the level to "info", `DebugAdd` calls are silently ignored. This is by design for performance - no work is done when the level is gated.
+
+## Thread Safety
+
+Logger instances are **not safe for concurrent use**. Each unit of work (HTTP request, background job) should have its own Logger instance. The middleware and `NewContext` automatically create a new Logger per request, so concurrent HTTP requests are safe.
+
+```go
+// SAFE: Each request gets its own logger via middleware
+func handler(w http.ResponseWriter, r *http.Request) {
+    ctx := r.Context()
+    canonlog.InfoAdd(ctx, "user_id", "123")  // Safe
+}
+
+// UNSAFE: Sharing a logger across goroutines
+log := canonlog.New()
+go log.InfoAdd("key1", "value1")  // Race condition!
+go log.InfoAdd("key2", "value2")  // Race condition!
+```
+
 ## Example Output
 
 ### Text Format (default)
@@ -195,7 +214,9 @@ time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=4
 
 **`NewContext(ctx) context.Context`** - Create context with new logger.
 
-**`GetLogger(ctx) *Logger`** - Retrieve logger from context for chaining.
+**`GetLogger(ctx) *Logger`** - Retrieve logger from context for chaining. Panics if no logger exists.
+
+**`TryGetLogger(ctx) (*Logger, bool)`** - Retrieve logger from context without panicking. Returns (nil, false) if no logger.
 
 **`DebugAdd(ctx, key, value)`** - Add field at debug level.
 

@@ -1,6 +1,8 @@
 package http
 
 import (
+	"bufio"
+	"net"
 	"net/http"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -74,6 +76,26 @@ func (w *responseWriter) Write(data []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(data)
 	w.bytesWritten += int64(n)
 	return n, err
+}
+
+// Flush implements http.Flusher for streaming responses.
+func (w *responseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack implements http.Hijacker for WebSocket upgrades.
+func (w *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
+}
+
+// Unwrap returns the underlying ResponseWriter for interface checks.
+func (w *responseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 // ChiMiddleware creates chi-compatible HTTP middleware that integrates with chi's RequestID middleware.

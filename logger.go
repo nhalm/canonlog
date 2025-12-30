@@ -12,21 +12,37 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 )
 
 // logLevel stores the configured log level for filtering accumulation.
-var logLevel = slog.LevelInfo
+// Uses atomic operations for thread-safe read/write.
+var logLevel atomic.Int32
+
+func init() {
+	logLevel.Store(int32(slog.LevelInfo))
+}
+
+// getLogLevel returns the current log level atomically.
+func getLogLevel() slog.Level {
+	return slog.Level(logLevel.Load())
+}
 
 // RequestIDGenerator is the function used to generate request IDs.
 // It can be overridden globally to customize ID generation.
 //
+// IMPORTANT: Set this value before starting any HTTP handlers to avoid race conditions.
+// It should be configured during application initialization, not at runtime.
+//
 // By default, it uses GenerateRequestID which produces UUIDv7 identifiers.
 // You can override this to use custom ID formats:
 //
-//	canonlog.RequestIDGenerator = func() string {
-//		return fmt.Sprintf("req_%d", time.Now().UnixNano())
+//	func init() {
+//		canonlog.RequestIDGenerator = func() string {
+//			return fmt.Sprintf("req_%d", time.Now().UnixNano())
+//		}
 //	}
 var RequestIDGenerator = GenerateRequestID
 
@@ -76,8 +92,8 @@ func SetupGlobalLogger(levelStr, logFormat string) {
 		handler = slog.NewTextHandler(os.Stdout, opts) // Default to text
 	}
 
-	// Store the level for accumulation filtering
-	logLevel = level
+	// Store the level for accumulation filtering (atomic)
+	logLevel.Store(int32(level))
 
 	// Set the global logger
 	logger := slog.New(handler)

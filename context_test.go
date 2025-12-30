@@ -7,6 +7,13 @@ import (
 	"testing"
 )
 
+// setTestLogLevel sets the log level for testing and returns a cleanup function.
+func setTestLogLevel(level slog.Level) func() {
+	old := logLevel.Load()
+	logLevel.Store(int32(level))
+	return func() { logLevel.Store(old) }
+}
+
 func TestNew(t *testing.T) {
 	l := New()
 
@@ -29,9 +36,7 @@ func TestNew(t *testing.T) {
 
 func TestLoggerDebugAdd(t *testing.T) {
 	// Set level to debug so fields are accumulated
-	oldLevel := logLevel
-	logLevel = slog.LevelDebug
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelDebug)()
 
 	l := New()
 	l.DebugAdd("key1", "value1")
@@ -43,9 +48,7 @@ func TestLoggerDebugAdd(t *testing.T) {
 
 func TestLoggerDebugAddIgnoredWhenLevelHigher(t *testing.T) {
 	// Set level to info so debug fields are ignored
-	oldLevel := logLevel
-	logLevel = slog.LevelInfo
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelInfo)()
 
 	l := New()
 	l.DebugAdd("key1", "value1")
@@ -56,9 +59,7 @@ func TestLoggerDebugAddIgnoredWhenLevelHigher(t *testing.T) {
 }
 
 func TestLoggerInfoAdd(t *testing.T) {
-	oldLevel := logLevel
-	logLevel = slog.LevelInfo
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelInfo)()
 
 	l := New()
 	l.InfoAdd("key1", "value1")
@@ -69,9 +70,7 @@ func TestLoggerInfoAdd(t *testing.T) {
 }
 
 func TestLoggerWarnAdd(t *testing.T) {
-	oldLevel := logLevel
-	logLevel = slog.LevelWarn
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelWarn)()
 
 	l := New()
 	l.WarnAdd("key1", "value1")
@@ -86,9 +85,7 @@ func TestLoggerWarnAdd(t *testing.T) {
 }
 
 func TestLoggerErrorAdd(t *testing.T) {
-	oldLevel := logLevel
-	logLevel = slog.LevelError
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelError)()
 
 	l := New()
 	err := errors.New("test error")
@@ -108,9 +105,7 @@ func TestLoggerErrorAdd(t *testing.T) {
 }
 
 func TestLoggerErrorAddMultiple(t *testing.T) {
-	oldLevel := logLevel
-	logLevel = slog.LevelError
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelError)()
 
 	l := New()
 	err1 := errors.New("error 1")
@@ -132,9 +127,7 @@ func TestLoggerErrorAddMultiple(t *testing.T) {
 }
 
 func TestLoggerErrorAddNil(t *testing.T) {
-	oldLevel := logLevel
-	logLevel = slog.LevelError
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelError)()
 
 	l := New()
 	l.ErrorAdd(nil)
@@ -149,9 +142,7 @@ func TestLoggerErrorAddNil(t *testing.T) {
 }
 
 func TestLoggerAddMany(t *testing.T) {
-	oldLevel := logLevel
-	logLevel = slog.LevelInfo
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelInfo)()
 
 	l := New()
 	fields := map[string]any{
@@ -179,9 +170,7 @@ func TestLoggerSetMessage(t *testing.T) {
 }
 
 func TestLoggerChaining(t *testing.T) {
-	oldLevel := logLevel
-	logLevel = slog.LevelDebug
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelDebug)()
 
 	l := New()
 	result := l.DebugAdd("key1", "value1").
@@ -213,19 +202,47 @@ func TestGetLogger(t *testing.T) {
 	if l == nil {
 		t.Fatal("GetLogger returned nil")
 	}
+}
+
+func TestGetLoggerPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("GetLogger should panic when no logger in context")
+		}
+	}()
 
 	emptyCtx := context.Background()
-	l2 := GetLogger(emptyCtx)
+	GetLogger(emptyCtx)
+}
 
-	if l2 == nil {
-		t.Fatal("GetLogger should return a new logger if none exists")
+func TestTryGetLogger(t *testing.T) {
+	ctx := NewContext(context.Background())
+	l, ok := TryGetLogger(ctx)
+
+	if !ok {
+		t.Fatal("TryGetLogger should return true when logger exists")
+	}
+
+	if l == nil {
+		t.Fatal("TryGetLogger returned nil logger")
+	}
+}
+
+func TestTryGetLoggerNoLogger(t *testing.T) {
+	emptyCtx := context.Background()
+	l, ok := TryGetLogger(emptyCtx)
+
+	if ok {
+		t.Error("TryGetLogger should return false when no logger in context")
+	}
+
+	if l != nil {
+		t.Error("TryGetLogger should return nil when no logger in context")
 	}
 }
 
 func TestInfoAdd_ContextHelper(t *testing.T) {
-	oldLevel := logLevel
-	logLevel = slog.LevelInfo
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelInfo)()
 
 	ctx := NewContext(context.Background())
 	InfoAdd(ctx, "test_key", "test_value")
@@ -237,9 +254,7 @@ func TestInfoAdd_ContextHelper(t *testing.T) {
 }
 
 func TestInfoAddMany_ContextHelper(t *testing.T) {
-	oldLevel := logLevel
-	logLevel = slog.LevelInfo
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelInfo)()
 
 	ctx := NewContext(context.Background())
 	fields := map[string]any{
@@ -257,9 +272,7 @@ func TestInfoAddMany_ContextHelper(t *testing.T) {
 }
 
 func TestErrorAdd_ContextHelper(t *testing.T) {
-	oldLevel := logLevel
-	logLevel = slog.LevelError
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelError)()
 
 	ctx := NewContext(context.Background())
 	err := errors.New("context error")
@@ -280,9 +293,7 @@ func TestErrorAdd_ContextHelper(t *testing.T) {
 }
 
 func TestHighestLevelTracking(t *testing.T) {
-	oldLevel := logLevel
-	logLevel = slog.LevelDebug
-	defer func() { logLevel = oldLevel }()
+	defer setTestLogLevel(slog.LevelDebug)()
 
 	l := New()
 	l.DebugAdd("debug", "value")
