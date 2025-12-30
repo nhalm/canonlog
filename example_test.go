@@ -11,7 +11,7 @@ import (
 )
 
 func ExampleSetupGlobalLogger() {
-	canonlog.SetupGlobalLogger("info", "json")
+	canonlog.SetupGlobalLogger("info", "text")
 }
 
 func ExampleGenerateRequestID() {
