@@ -128,8 +128,9 @@ func (l *Logger) WarnAddMany(fields map[string]any) *Logger {
 // All errors are output as an "errors" array in the final log entry.
 func (l *Logger) ErrorAdd(err error) *Logger {
 	if err != nil && getLogLevel() <= slog.LevelError {
+		errStr := err.Error()
 		l.mu.Lock()
-		l.errors = append(l.errors, err.Error())
+		l.errors = append(l.errors, errStr)
 		if l.level < slog.LevelError {
 			l.level = slog.LevelError
 		}
@@ -156,8 +157,12 @@ func (l *Logger) Flush(ctx context.Context) {
 	duration := time.Since(l.startTime)
 
 	l.mu.Lock()
+	level := l.level
+	message := l.message
+
 	attrsPtr := attrPool.Get().(*[]slog.Attr)
-	attrs := (*attrsPtr)[:0]
+	attrs := *attrsPtr
+	attrs = attrs[:0]
 
 	attrs = append(attrs, slog.Duration("duration", duration))
 	attrs = append(attrs, slog.Int64("duration_ms", duration.Milliseconds()))
@@ -169,15 +174,12 @@ func (l *Logger) Flush(ctx context.Context) {
 	if len(l.errors) > 0 {
 		attrs = append(attrs, slog.Any("errors", l.errors))
 	}
-
-	level := l.level
-	message := l.message
 	l.mu.Unlock()
 
 	slog.LogAttrs(ctx, level, message, attrs...)
 
-	// Return slice to pool
-	*attrsPtr = attrs[:0]
+	// Return slice to pool, preserving any capacity growth
+	*attrsPtr = attrs
 	attrPool.Put(attrsPtr)
 }
 
