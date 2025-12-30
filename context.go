@@ -10,7 +10,7 @@ import (
 // attrPool reduces allocations in Flush by reusing attribute slices.
 var attrPool = sync.Pool{
 	New: func() any {
-		s := make([]slog.Attr, 0, 16)
+		s := make([]slog.Attr, 0, 32)
 		return &s
 	},
 }
@@ -23,9 +23,8 @@ const loggerKey loggerKeyType = "canonlogger"
 // It collects fields and metadata as work is processed, then outputs
 // everything in a single structured log line when Flush is called.
 //
-// Logger is NOT safe for concurrent use. Each unit of work (e.g., HTTP request,
-// background job) should have its own Logger instance. The middleware and
-// NewContext create a new Logger per request, so concurrent requests are safe.
+// Logger is safe for concurrent use within a single request. Multiple goroutines
+// spawned from the same request can safely add fields to the same logger.
 //
 // Example usage:
 //
@@ -34,6 +33,7 @@ const loggerKey loggerKeyType = "canonlogger"
 //	log.InfoAdd("user_id", "123")
 //	defer log.Flush(ctx)
 type Logger struct {
+	mu        sync.Mutex
 	startTime time.Time
 	fields    map[string]any
 	errors    []string
@@ -55,7 +55,9 @@ func New() *Logger {
 // DebugAdd adds a field if debug level is enabled.
 func (l *Logger) DebugAdd(key string, value any) *Logger {
 	if getLogLevel() <= slog.LevelDebug {
+		l.mu.Lock()
 		l.fields[key] = value
+		l.mu.Unlock()
 	}
 	return l
 }
@@ -63,9 +65,11 @@ func (l *Logger) DebugAdd(key string, value any) *Logger {
 // DebugAddMany adds multiple fields if debug level is enabled.
 func (l *Logger) DebugAddMany(fields map[string]any) *Logger {
 	if getLogLevel() <= slog.LevelDebug {
+		l.mu.Lock()
 		for k, v := range fields {
 			l.fields[k] = v
 		}
+		l.mu.Unlock()
 	}
 	return l
 }
@@ -73,7 +77,9 @@ func (l *Logger) DebugAddMany(fields map[string]any) *Logger {
 // InfoAdd adds a field if info level is enabled.
 func (l *Logger) InfoAdd(key string, value any) *Logger {
 	if getLogLevel() <= slog.LevelInfo {
+		l.mu.Lock()
 		l.fields[key] = value
+		l.mu.Unlock()
 	}
 	return l
 }
@@ -81,9 +87,11 @@ func (l *Logger) InfoAdd(key string, value any) *Logger {
 // InfoAddMany adds multiple fields if info level is enabled.
 func (l *Logger) InfoAddMany(fields map[string]any) *Logger {
 	if getLogLevel() <= slog.LevelInfo {
+		l.mu.Lock()
 		for k, v := range fields {
 			l.fields[k] = v
 		}
+		l.mu.Unlock()
 	}
 	return l
 }
@@ -91,10 +99,12 @@ func (l *Logger) InfoAddMany(fields map[string]any) *Logger {
 // WarnAdd adds a field if warn level is enabled and sets level to at least Warn.
 func (l *Logger) WarnAdd(key string, value any) *Logger {
 	if getLogLevel() <= slog.LevelWarn {
+		l.mu.Lock()
 		l.fields[key] = value
 		if l.level < slog.LevelWarn {
 			l.level = slog.LevelWarn
 		}
+		l.mu.Unlock()
 	}
 	return l
 }
@@ -102,12 +112,14 @@ func (l *Logger) WarnAdd(key string, value any) *Logger {
 // WarnAddMany adds multiple fields if warn level is enabled and sets level to at least Warn.
 func (l *Logger) WarnAddMany(fields map[string]any) *Logger {
 	if getLogLevel() <= slog.LevelWarn {
+		l.mu.Lock()
 		for k, v := range fields {
 			l.fields[k] = v
 		}
 		if l.level < slog.LevelWarn {
 			l.level = slog.LevelWarn
 		}
+		l.mu.Unlock()
 	}
 	return l
 }
@@ -116,17 +128,21 @@ func (l *Logger) WarnAddMany(fields map[string]any) *Logger {
 // All errors are output as an "errors" array in the final log entry.
 func (l *Logger) ErrorAdd(err error) *Logger {
 	if err != nil && getLogLevel() <= slog.LevelError {
+		l.mu.Lock()
 		l.errors = append(l.errors, err.Error())
 		if l.level < slog.LevelError {
 			l.level = slog.LevelError
 		}
+		l.mu.Unlock()
 	}
 	return l
 }
 
 // SetMessage sets the message for the final log entry and returns the logger for chaining.
 func (l *Logger) SetMessage(message string) *Logger {
+	l.mu.Lock()
 	l.message = message
+	l.mu.Unlock()
 	return l
 }
 
@@ -139,6 +155,7 @@ func (l *Logger) SetMessage(message string) *Logger {
 func (l *Logger) Flush(ctx context.Context) {
 	duration := time.Since(l.startTime)
 
+	l.mu.Lock()
 	attrsPtr := attrPool.Get().(*[]slog.Attr)
 	attrs := (*attrsPtr)[:0]
 
@@ -153,7 +170,11 @@ func (l *Logger) Flush(ctx context.Context) {
 		attrs = append(attrs, slog.Any("errors", l.errors))
 	}
 
-	slog.LogAttrs(ctx, l.level, l.message, attrs...)
+	level := l.level
+	message := l.message
+	l.mu.Unlock()
+
+	slog.LogAttrs(ctx, level, message, attrs...)
 
 	// Return slice to pool
 	*attrsPtr = attrs[:0]

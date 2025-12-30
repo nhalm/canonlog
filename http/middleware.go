@@ -98,6 +98,14 @@ func (w *responseWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
 }
 
+// Push implements http.Pusher for HTTP/2 server push.
+func (w *responseWriter) Push(target string, opts *http.PushOptions) error {
+	if p, ok := w.ResponseWriter.(http.Pusher); ok {
+		return p.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
 // ChiMiddleware creates chi-compatible HTTP middleware that integrates with chi's RequestID middleware.
 // It accumulates request data throughout the request lifecycle and outputs a single log line at the end.
 //

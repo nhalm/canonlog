@@ -131,19 +131,27 @@ The final log is emitted at the highest accumulated level. If you call `ErrorAdd
 
 ## Thread Safety
 
-Logger instances are **not safe for concurrent use**. Each unit of work (HTTP request, background job) should have its own Logger instance. The middleware and `NewContext` automatically create a new Logger per request, so concurrent HTTP requests are safe.
+Logger instances are safe for concurrent use. Multiple goroutines spawned from a single request can safely add fields to the same logger:
 
 ```go
-// SAFE: Each request gets its own logger via middleware
 func handler(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()
-    canonlog.InfoAdd(ctx, "user_id", "123")  // Safe
-}
 
-// UNSAFE: Sharing a logger across goroutines
-log := canonlog.New()
-go log.InfoAdd("key1", "value1")  // Race condition!
-go log.InfoAdd("key2", "value2")  // Race condition!
+    var wg sync.WaitGroup
+    wg.Add(2)
+
+    go func() {
+        defer wg.Done()
+        canonlog.InfoAdd(ctx, "task1", "done")  // Safe
+    }()
+
+    go func() {
+        defer wg.Done()
+        canonlog.InfoAdd(ctx, "task2", "done")  // Safe
+    }()
+
+    wg.Wait()
+}
 ```
 
 ## Example Output
