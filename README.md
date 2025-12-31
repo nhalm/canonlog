@@ -168,7 +168,7 @@ time=2025-01-15T10:30:45Z level=INFO msg="" duration=45.2ms duration_ms=45 user_
 
 **`ErrorAdd(ctx, err error)`** - Append error to errors array, escalates log level.
 
-**`Flush(ctx)`** - Emit accumulated log entry.
+**`Flush(ctx)`** - Emit accumulated log entry and reset logger for reuse.
 
 ## Multi-Layer Architecture
 
@@ -234,27 +234,27 @@ func processJob(jobID string) error {
 
 ### Batch Processing
 
-For jobs that process multiple items and need separate log lines per item:
+Flush resets the logger, so you can reuse it for multiple log entries:
 
 ```go
 func processBatches(ctx context.Context, batches []Batch) error {
+	ctx = canonlog.NewContext(ctx)
+
 	for _, batch := range batches {
-		batchCtx := canonlog.NewContext(ctx)
+		canonlog.InfoAdd(ctx, "batch_id", batch.ID)
+		canonlog.InfoAdd(ctx, "size", len(batch.Items))
 
-		canonlog.InfoAdd(batchCtx, "batch_id", batch.ID)
-		canonlog.InfoAdd(batchCtx, "size", len(batch.Items))
-
-		if err := processBatch(batchCtx, batch); err != nil {
-			canonlog.ErrorAdd(batchCtx, err)
+		if err := processBatch(ctx, batch); err != nil {
+			canonlog.ErrorAdd(ctx, err)
 		}
 
-		canonlog.Flush(batchCtx)  // Emit log line for this batch
+		canonlog.Flush(ctx)  // Emit log line and reset for next batch
 	}
 	return nil
 }
 ```
 
-Each `NewContext` creates a fresh logger. The parent context's deadlines and cancellation propagate, but each batch gets independent logging.
+Each Flush emits a log entry and resets the logger (clears fields, errors, level, and restarts the duration timer).
 
 ### Using GetLogger for Chaining
 
