@@ -38,17 +38,16 @@ type Logger struct {
 	fields    map[string]any
 	errors    []string
 	level     slog.Level
-	message   string
 }
 
 // New creates a new logger with default settings.
-// The logger starts with INFO level and "Completed" as the default message.
+// The logger starts with INFO level.
 func New() *Logger {
 	return &Logger{
 		startTime: time.Now(),
-		fields:    make(map[string]any, 8), // Pre-size for typical request (6-10 fields)
+		fields:    make(map[string]any, 8),
+		errors:    make([]string, 0, 2),
 		level:     slog.LevelInfo,
-		message:   "Completed",
 	}
 }
 
@@ -64,7 +63,7 @@ func (l *Logger) DebugAdd(key string, value any) *Logger {
 
 // DebugAddMany adds multiple fields if debug level is enabled.
 func (l *Logger) DebugAddMany(fields map[string]any) *Logger {
-	if getLogLevel() <= slog.LevelDebug {
+	if len(fields) > 0 && getLogLevel() <= slog.LevelDebug {
 		l.mu.Lock()
 		for k, v := range fields {
 			l.fields[k] = v
@@ -86,7 +85,7 @@ func (l *Logger) InfoAdd(key string, value any) *Logger {
 
 // InfoAddMany adds multiple fields if info level is enabled.
 func (l *Logger) InfoAddMany(fields map[string]any) *Logger {
-	if getLogLevel() <= slog.LevelInfo {
+	if len(fields) > 0 && getLogLevel() <= slog.LevelInfo {
 		l.mu.Lock()
 		for k, v := range fields {
 			l.fields[k] = v
@@ -111,7 +110,7 @@ func (l *Logger) WarnAdd(key string, value any) *Logger {
 
 // WarnAddMany adds multiple fields if warn level is enabled and sets level to at least Warn.
 func (l *Logger) WarnAddMany(fields map[string]any) *Logger {
-	if getLogLevel() <= slog.LevelWarn {
+	if len(fields) > 0 && getLogLevel() <= slog.LevelWarn {
 		l.mu.Lock()
 		for k, v := range fields {
 			l.fields[k] = v
@@ -128,9 +127,8 @@ func (l *Logger) WarnAddMany(fields map[string]any) *Logger {
 // All errors are output as an "errors" array in the final log entry.
 func (l *Logger) ErrorAdd(err error) *Logger {
 	if err != nil && getLogLevel() <= slog.LevelError {
-		errStr := err.Error()
 		l.mu.Lock()
-		l.errors = append(l.errors, errStr)
+		l.errors = append(l.errors, err.Error())
 		if l.level < slog.LevelError {
 			l.level = slog.LevelError
 		}
@@ -139,27 +137,40 @@ func (l *Logger) ErrorAdd(err error) *Logger {
 	return l
 }
 
-// SetMessage sets the message for the final log entry and returns the logger for chaining.
-func (l *Logger) SetMessage(message string) *Logger {
-	l.mu.Lock()
-	l.message = message
-	l.mu.Unlock()
-	return l
-}
-
-// Flush outputs the accumulated data in a single structured log line.
-// It includes the duration since the logger was created, all accumulated fields,
-// and any errors that were added.
+// Flush outputs the accumulated data in a single structured log line and resets
+// the logger for reuse. It includes the duration since the logger was created
+// (or last flushed), all accumulated fields, and any errors.
+//
+// After Flush, the logger is reset: fields and errors are cleared, level returns
+// to INFO, and the duration timer restarts. This allows multiple Flush calls
+// for batch processing or long-running operations.
 //
 // This method is typically called in a defer statement to ensure logging
 // happens even if the handler panics.
 func (l *Logger) Flush(ctx context.Context) {
 	duration := time.Since(l.startTime)
 
+	// Copy data and reset under lock
 	l.mu.Lock()
 	level := l.level
-	message := l.message
+	fieldsCopy := make(map[string]any, len(l.fields))
+	for k, v := range l.fields {
+		fieldsCopy[k] = v
+	}
+	var errorsCopy []string
+	if len(l.errors) > 0 {
+		errorsCopy = make([]string, len(l.errors))
+		copy(errorsCopy, l.errors)
+	}
 
+	// Reset logger state for reuse
+	clear(l.fields)
+	l.errors = l.errors[:0]
+	l.level = slog.LevelInfo
+	l.startTime = time.Now()
+	l.mu.Unlock()
+
+	// Build attrs outside lock
 	attrsPtr := attrPool.Get().(*[]slog.Attr)
 	attrs := *attrsPtr
 	attrs = attrs[:0]
@@ -167,16 +178,15 @@ func (l *Logger) Flush(ctx context.Context) {
 	attrs = append(attrs, slog.Duration("duration", duration))
 	attrs = append(attrs, slog.Int64("duration_ms", duration.Milliseconds()))
 
-	for k, v := range l.fields {
+	for k, v := range fieldsCopy {
 		attrs = append(attrs, slog.Any(k, v))
 	}
 
-	if len(l.errors) > 0 {
-		attrs = append(attrs, slog.Any("errors", l.errors))
+	if len(errorsCopy) > 0 {
+		attrs = append(attrs, slog.Any("errors", errorsCopy))
 	}
-	l.mu.Unlock()
 
-	slog.LogAttrs(ctx, level, message, attrs...)
+	slog.LogAttrs(ctx, level, "", attrs...)
 
 	// Return slice to pool, preserving any capacity growth
 	*attrsPtr = attrs
@@ -199,7 +209,7 @@ func GetLogger(ctx context.Context) *Logger {
 	if l, ok := ctx.Value(loggerKey).(*Logger); ok {
 		return l
 	}
-	panic("canonlog: no logger in context")
+	panic("canonlog: no logger in context - did you forget to call NewContext()?")
 }
 
 // TryGetLogger retrieves the logger from context without panicking.

@@ -8,7 +8,14 @@
       "Bash(git checkout:*)",
       "Bash(find:*)",
       "Bash(tree:*)",
-      "Bash(go fmt:*)"
+      "Bash(go fmt:*)",
+      "Bash(staticcheck:*)",
+      "Bash(go run:*)",
+      "Bash(go doc:*)",
+      "Bash(go vet:*)",
+      "Bash(go tool pprof:*)",
+      "Bash(go build:*)",
+      "Bash(go version:*)"
     ],
     "deny": [],
     "ask": []

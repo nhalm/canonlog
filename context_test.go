@@ -28,10 +28,6 @@ func TestNew(t *testing.T) {
 	if l.level != slog.LevelInfo {
 		t.Errorf("Expected default level Info, got %v", l.level)
 	}
-
-	if l.message != "Completed" {
-		t.Errorf("Expected default message 'Completed', got %s", l.message)
-	}
 }
 
 func TestLoggerDebugAdd(t *testing.T) {
@@ -159,23 +155,12 @@ func TestLoggerAddMany(t *testing.T) {
 	}
 }
 
-func TestLoggerSetMessage(t *testing.T) {
-	l := New()
-	msg := "Custom message"
-	l.SetMessage(msg)
-
-	if l.message != msg {
-		t.Errorf("Expected message '%s', got '%s'", msg, l.message)
-	}
-}
-
 func TestLoggerChaining(t *testing.T) {
 	defer setTestLogLevel(slog.LevelDebug)()
 
 	l := New()
 	result := l.DebugAdd("key1", "value1").
-		InfoAdd("key2", "value2").
-		SetMessage("Test message")
+		InfoAdd("key2", "value2")
 
 	if result != l {
 		t.Error("Methods should return the same logger instance for chaining")

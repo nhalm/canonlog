@@ -101,7 +101,7 @@ func processWork(ctx context.Context) {
 ### Text Format (default)
 
 ```
-time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=45 user_id=123 action=fetch_profile cache_hit=true db_queries=2
+time=2025-01-15T10:30:45Z level=INFO msg="" duration=45.2ms duration_ms=45 user_id=123 action=fetch_profile cache_hit=true db_queries=2
 ```
 
 ### JSON Format
@@ -110,7 +110,7 @@ time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=4
 {
   "time": "2025-01-15T10:30:45Z",
   "level": "INFO",
-  "msg": "Completed",
+  "msg": "",
   "duration": "45.2ms",
   "duration_ms": 45,
   "user_id": "123",
@@ -144,9 +144,7 @@ time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=4
 
 **`(*Logger).ErrorAdd(err error) *Logger`** - Append error to errors array, escalates log level (chainable).
 
-**`(*Logger).SetMessage(string) *Logger`** - Set custom log message (chainable).
-
-**`(*Logger).Flush(ctx)`** - Emit accumulated log entry.
+**`(*Logger).Flush(ctx)`** - Emit accumulated log entry and reset logger for reuse.
 
 ### Context Helpers
 
