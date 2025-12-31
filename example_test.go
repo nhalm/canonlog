@@ -14,6 +14,7 @@ func ExampleSetupGlobalLogger() {
 func ExampleLogger() {
 	ctx := context.Background()
 	l := canonlog.New()
+	defer l.Flush(ctx)
 
 	l.InfoAdd("user_id", "123")
 	l.InfoAdd("action", "create_order")
@@ -21,12 +22,11 @@ func ExampleLogger() {
 		"amount":   99.99,
 		"currency": "USD",
 	})
-
-	defer l.Flush(ctx)
 }
 
 func ExampleInfoAdd() {
 	ctx := canonlog.NewContext(context.Background())
+	defer canonlog.Flush(ctx)
 
 	canonlog.InfoAdd(ctx, "user_id", "123")
 	canonlog.InfoAdd(ctx, "action", "fetch_profile")
@@ -34,6 +34,7 @@ func ExampleInfoAdd() {
 
 func ExampleInfoAddMany() {
 	ctx := canonlog.NewContext(context.Background())
+	defer canonlog.Flush(ctx)
 
 	canonlog.InfoAddMany(ctx, map[string]any{
 		"user_id": "123",
@@ -44,14 +45,16 @@ func ExampleInfoAddMany() {
 
 func ExampleErrorAdd() {
 	ctx := canonlog.NewContext(context.Background())
+	defer canonlog.Flush(ctx)
 
 	canonlog.ErrorAdd(ctx, errors.New("payment failed"))
 }
 
 func ExampleLogger_chainable() {
 	ctx := context.Background()
-
 	l := canonlog.New()
+	defer l.Flush(ctx)
+
 	l.DebugAdd("cache", "hit").
 		InfoAdd("user_id", "123").
 		InfoAdd("action", "login").
@@ -59,6 +62,4 @@ func ExampleLogger_chainable() {
 			"ip":         "192.168.1.1",
 			"user_agent": "Mozilla/5.0",
 		})
-
-	defer l.Flush(ctx)
 }

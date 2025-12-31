@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"sync"
-	"time"
 )
 
 // attrPool reduces allocations in Flush by reusing attribute slices.
@@ -18,6 +17,18 @@ var attrPool = sync.Pool{
 type loggerKeyType string
 
 const loggerKey loggerKeyType = "canonlogger"
+
+// Option configures a Logger.
+type Option func(*Logger)
+
+// WithLevel sets the gate level for this logger, overriding the global level.
+// Fields are only accumulated if their level meets or exceeds this gate level.
+func WithLevel(level slog.Level) Option {
+	return func(l *Logger) {
+		l.gateLevel = level
+		l.level = level
+	}
+}
 
 // Logger accumulates context throughout a unit of work and logs once at the end.
 // It collects fields and metadata as work is processed, then outputs
@@ -34,26 +45,31 @@ const loggerKey loggerKeyType = "canonlogger"
 //	defer log.Flush(ctx)
 type Logger struct {
 	mu        sync.Mutex
-	startTime time.Time
 	fields    map[string]any
 	errors    []string
-	level     slog.Level
+	gateLevel slog.Level // controls what gets accumulated
+	level     slog.Level // output level, can escalate
 }
 
 // New creates a new logger with default settings.
-// The logger starts with INFO level.
-func New() *Logger {
-	return &Logger{
-		startTime: time.Now(),
+// The logger starts at the globally configured log level unless overridden with options.
+func New(opts ...Option) *Logger {
+	lvl := getLogLevel()
+	l := &Logger{
 		fields:    make(map[string]any, 8),
 		errors:    make([]string, 0, 2),
-		level:     slog.LevelInfo,
+		gateLevel: lvl,
+		level:     lvl,
 	}
+	for _, opt := range opts {
+		opt(l)
+	}
+	return l
 }
 
 // DebugAdd adds a field if debug level is enabled.
 func (l *Logger) DebugAdd(key string, value any) *Logger {
-	if getLogLevel() <= slog.LevelDebug {
+	if l.gateLevel <= slog.LevelDebug {
 		l.mu.Lock()
 		l.fields[key] = value
 		l.mu.Unlock()
@@ -63,7 +79,7 @@ func (l *Logger) DebugAdd(key string, value any) *Logger {
 
 // DebugAddMany adds multiple fields if debug level is enabled.
 func (l *Logger) DebugAddMany(fields map[string]any) *Logger {
-	if len(fields) > 0 && getLogLevel() <= slog.LevelDebug {
+	if len(fields) > 0 && l.gateLevel <= slog.LevelDebug {
 		l.mu.Lock()
 		for k, v := range fields {
 			l.fields[k] = v
@@ -75,7 +91,7 @@ func (l *Logger) DebugAddMany(fields map[string]any) *Logger {
 
 // InfoAdd adds a field if info level is enabled.
 func (l *Logger) InfoAdd(key string, value any) *Logger {
-	if getLogLevel() <= slog.LevelInfo {
+	if l.gateLevel <= slog.LevelInfo {
 		l.mu.Lock()
 		l.fields[key] = value
 		l.mu.Unlock()
@@ -85,7 +101,7 @@ func (l *Logger) InfoAdd(key string, value any) *Logger {
 
 // InfoAddMany adds multiple fields if info level is enabled.
 func (l *Logger) InfoAddMany(fields map[string]any) *Logger {
-	if len(fields) > 0 && getLogLevel() <= slog.LevelInfo {
+	if len(fields) > 0 && l.gateLevel <= slog.LevelInfo {
 		l.mu.Lock()
 		for k, v := range fields {
 			l.fields[k] = v
@@ -97,7 +113,7 @@ func (l *Logger) InfoAddMany(fields map[string]any) *Logger {
 
 // WarnAdd adds a field if warn level is enabled and sets level to at least Warn.
 func (l *Logger) WarnAdd(key string, value any) *Logger {
-	if getLogLevel() <= slog.LevelWarn {
+	if l.gateLevel <= slog.LevelWarn {
 		l.mu.Lock()
 		l.fields[key] = value
 		if l.level < slog.LevelWarn {
@@ -110,7 +126,7 @@ func (l *Logger) WarnAdd(key string, value any) *Logger {
 
 // WarnAddMany adds multiple fields if warn level is enabled and sets level to at least Warn.
 func (l *Logger) WarnAddMany(fields map[string]any) *Logger {
-	if len(fields) > 0 && getLogLevel() <= slog.LevelWarn {
+	if len(fields) > 0 && l.gateLevel <= slog.LevelWarn {
 		l.mu.Lock()
 		for k, v := range fields {
 			l.fields[k] = v
@@ -126,7 +142,7 @@ func (l *Logger) WarnAddMany(fields map[string]any) *Logger {
 // ErrorAdd appends an error to the errors slice and sets level to Error.
 // All errors are output as an "errors" array in the final log entry.
 func (l *Logger) ErrorAdd(err error) *Logger {
-	if err != nil && getLogLevel() <= slog.LevelError {
+	if err != nil && l.gateLevel <= slog.LevelError {
 		l.mu.Lock()
 		l.errors = append(l.errors, err.Error())
 		if l.level < slog.LevelError {
@@ -138,21 +154,18 @@ func (l *Logger) ErrorAdd(err error) *Logger {
 }
 
 // Flush outputs the accumulated data in a single structured log line and resets
-// the logger for reuse. It includes the duration since the logger was created
-// (or last flushed), all accumulated fields, and any errors.
+// the logger for reuse.
 //
-// After Flush, the logger is reset: fields and errors are cleared, level returns
-// to INFO, and the duration timer restarts. This allows multiple Flush calls
-// for batch processing or long-running operations.
+// After Flush, the logger is reset: fields and errors are cleared, and the output
+// level returns to the gate level. This allows multiple Flush calls for batch
+// processing or long-running operations.
 //
 // This method is typically called in a defer statement to ensure logging
 // happens even if the handler panics.
 func (l *Logger) Flush(ctx context.Context) {
-	duration := time.Since(l.startTime)
-
 	// Copy data and reset under lock
 	l.mu.Lock()
-	level := l.level
+	outputLevel := l.level
 	fieldsCopy := make(map[string]any, len(l.fields))
 	for k, v := range l.fields {
 		fieldsCopy[k] = v
@@ -165,18 +178,24 @@ func (l *Logger) Flush(ctx context.Context) {
 
 	// Reset logger state for reuse
 	clear(l.fields)
-	l.errors = l.errors[:0]
-	l.level = slog.LevelInfo
-	l.startTime = time.Now()
+	l.errors = make([]string, 0, 2)
+	l.level = l.gateLevel
 	l.mu.Unlock()
+
+	// Pre-calculate capacity to avoid reallocation
+	neededCap := len(fieldsCopy)
+	if len(errorsCopy) > 0 {
+		neededCap++
+	}
 
 	// Build attrs outside lock
 	attrsPtr := attrPool.Get().(*[]slog.Attr)
 	attrs := *attrsPtr
-	attrs = attrs[:0]
-
-	attrs = append(attrs, slog.Duration("duration", duration))
-	attrs = append(attrs, slog.Int64("duration_ms", duration.Milliseconds()))
+	if cap(attrs) < neededCap {
+		attrs = make([]slog.Attr, 0, neededCap)
+	} else {
+		attrs = attrs[:0]
+	}
 
 	for k, v := range fieldsCopy {
 		attrs = append(attrs, slog.Any(k, v))
@@ -186,7 +205,7 @@ func (l *Logger) Flush(ctx context.Context) {
 		attrs = append(attrs, slog.Any("errors", errorsCopy))
 	}
 
-	slog.LogAttrs(ctx, level, "", attrs...)
+	slog.LogAttrs(ctx, outputLevel, "", attrs...)
 
 	// Return slice to pool, preserving any capacity growth
 	*attrsPtr = attrs

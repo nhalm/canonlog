@@ -15,6 +15,8 @@ func setTestLogLevel(level slog.Level) func() {
 }
 
 func TestNew(t *testing.T) {
+	defer setTestLogLevel(slog.LevelInfo)()
+
 	l := New()
 
 	if l == nil {
@@ -25,8 +27,24 @@ func TestNew(t *testing.T) {
 		t.Error("fields map not initialized")
 	}
 
+	if l.gateLevel != slog.LevelInfo {
+		t.Errorf("Expected default gateLevel Info, got %v", l.gateLevel)
+	}
+
 	if l.level != slog.LevelInfo {
 		t.Errorf("Expected default level Info, got %v", l.level)
+	}
+}
+
+func TestNewWithLevel(t *testing.T) {
+	l := New(WithLevel(slog.LevelError))
+
+	if l.gateLevel != slog.LevelError {
+		t.Errorf("Expected gateLevel Error, got %v", l.gateLevel)
+	}
+
+	if l.level != slog.LevelError {
+		t.Errorf("Expected level Error, got %v", l.level)
 	}
 }
 
@@ -132,8 +150,8 @@ func TestLoggerErrorAddNil(t *testing.T) {
 		t.Errorf("Expected 0 errors after adding nil, got %d", len(l.errors))
 	}
 
-	if l.level != slog.LevelInfo {
-		t.Errorf("Expected level to remain Info after nil error, got %v", l.level)
+	if l.level != slog.LevelError {
+		t.Errorf("Expected level to remain at gateLevel (Error) after nil error, got %v", l.level)
 	}
 }
 
@@ -281,14 +299,20 @@ func TestHighestLevelTracking(t *testing.T) {
 	defer setTestLogLevel(slog.LevelDebug)()
 
 	l := New()
+
+	// Level starts at gateLevel (Debug)
+	if l.level != slog.LevelDebug {
+		t.Errorf("Expected level Debug initially, got %v", l.level)
+	}
+
 	l.DebugAdd("debug", "value")
-	if l.level != slog.LevelInfo {
-		t.Errorf("Expected level Info after DebugAdd, got %v", l.level)
+	if l.level != slog.LevelDebug {
+		t.Errorf("Expected level Debug after DebugAdd, got %v", l.level)
 	}
 
 	l.InfoAdd("info", "value")
-	if l.level != slog.LevelInfo {
-		t.Errorf("Expected level Info after InfoAdd, got %v", l.level)
+	if l.level != slog.LevelDebug {
+		t.Errorf("Expected level Debug after InfoAdd (no escalation), got %v", l.level)
 	}
 
 	l.WarnAdd("warn", "value")

@@ -98,10 +98,12 @@ func processWork(ctx context.Context) {
 
 ## Example Output
 
+The `msg` field is empty since canonlog focuses on structured fields rather than text messages. The `errors` field only appears when errors have been added.
+
 ### Text Format (default)
 
 ```
-time=2025-01-15T10:30:45Z level=INFO msg="" duration=45.2ms duration_ms=45 user_id=123 action=fetch_profile cache_hit=true db_queries=2
+time=2025-01-15T10:30:45Z level=INFO msg="" user_id=123 action=fetch_profile cache_hit=true db_queries=2
 ```
 
 ### JSON Format
@@ -111,8 +113,6 @@ time=2025-01-15T10:30:45Z level=INFO msg="" duration=45.2ms duration_ms=45 user_
   "time": "2025-01-15T10:30:45Z",
   "level": "INFO",
   "msg": "",
-  "duration": "45.2ms",
-  "duration_ms": 45,
   "user_id": "123",
   "action": "fetch_profile",
   "cache_hit": true,
@@ -126,9 +126,18 @@ time=2025-01-15T10:30:45Z level=INFO msg="" duration=45.2ms duration_ms=45 user_
 
 **`SetupGlobalLogger(logLevel, logFormat string)`** - Configure global slog logger. Levels: "debug", "info", "warn", "error". Formats: "text" (default), "json".
 
+### Options
+
+**`WithLevel(slog.Level) Option`** - Set the gate level for a logger, overriding the global level.
+
 ### Logger
 
-**`New() *Logger`** - Create new logger instance.
+**`New(opts ...Option) *Logger`** - Create new logger instance. Defaults to the global log level unless overridden with options.
+
+```go
+l := canonlog.New()                                    // uses global level
+l := canonlog.New(canonlog.WithLevel(slog.LevelError)) // uses ERROR level
+```
 
 **`(*Logger).DebugAdd(key, value) *Logger`** - Add field at debug level (chainable).
 
@@ -254,7 +263,7 @@ func processBatches(ctx context.Context, batches []Batch) error {
 }
 ```
 
-Each Flush emits a log entry and resets the logger (clears fields, errors, level, and restarts the duration timer).
+Each Flush emits a log entry and resets the logger (clears fields, errors, and resets the output level to the gate level).
 
 Alternatively, create a new context per batch for fully isolated logging:
 
