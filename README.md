@@ -256,6 +256,22 @@ func processBatches(ctx context.Context, batches []Batch) error {
 
 Each Flush emits a log entry and resets the logger (clears fields, errors, level, and restarts the duration timer).
 
+Alternatively, create a new context per batch for fully isolated logging:
+
+```go
+func processBatches(ctx context.Context, batches []Batch) error {
+	for _, batch := range batches {
+		batchCtx := canonlog.NewContext(ctx)
+
+		canonlog.InfoAdd(batchCtx, "batch_id", batch.ID)
+		processBatch(batchCtx, batch)  // Can pass context to other functions
+
+		canonlog.Flush(batchCtx)
+	}
+	return nil
+}
+```
+
 ### Using GetLogger for Chaining
 
 Use `GetLogger` when you want to chain multiple field additions:
