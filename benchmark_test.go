@@ -13,13 +13,6 @@ func setBenchLogLevel(level slog.Level) func() {
 	return func() { logLevel.Store(old) }
 }
 
-func BenchmarkGenerateRequestID(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_ = GenerateRequestID()
-	}
-}
-
 func BenchmarkNew(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -147,7 +140,7 @@ func BenchmarkFullRequestCycle(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ctx := NewContext(context.Background())
 
-		InfoAdd(ctx, "request_id", GenerateRequestID())
+		InfoAdd(ctx, "request_id", "test-request-id")
 		InfoAdd(ctx, "method", "GET")
 		InfoAdd(ctx, "path", "/api/users")
 		InfoAddMany(ctx, map[string]any{

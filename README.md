@@ -21,9 +21,8 @@ Inspired by logging patterns from companies like Stripe, Uber, and Google, canon
 - **Single-line output** - All data in one structured log entry
 - **Level-gated accumulation** - Fields only accumulate if log level is enabled
 - **Automatic level escalation** - Final log emits at highest accumulated level
-- **UUIDv7 request IDs** - Time-ordered, sortable unique identifiers (RFC 9562)
 - **Standard library integration** - Built on Go's `log/slog`
-- **Flexible middleware** - Standard library HTTP and chi router support
+- **Zero dependencies** - Only uses Go standard library
 
 ## Installation
 
@@ -33,82 +32,27 @@ go get github.com/nhalm/canonlog
 
 ## Quick Start
 
-### Standard Library HTTP
-
 ```go
 package main
 
 import (
-	"net/http"
+	"context"
 
 	"github.com/nhalm/canonlog"
-	canonhttp "github.com/nhalm/canonlog/http"
 )
 
 func main() {
-	// Setup global logger (optional - uses slog defaults if not called)
-	canonlog.SetupGlobalLogger("info", "text")
+	canonlog.SetupGlobalLogger("info", "json")
 
-	mux := http.NewServeMux()
+	ctx := canonlog.NewContext(context.Background())
+	defer canonlog.Flush(ctx)
 
-	// Add canonical logging middleware
-	handler := canonhttp.Middleware(nil)(mux)
-
-	mux.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		// Add fields at info level
-		canonlog.InfoAdd(ctx, "user_id", "123")
-		canonlog.InfoAdd(ctx, "action", "fetch_profile")
-
-		// Add multiple fields at once
-		canonlog.InfoAddMany(ctx, map[string]any{
-			"cache_hit":  true,
-			"db_queries": 2,
-		})
-
-		w.Write([]byte("OK"))
+	canonlog.InfoAdd(ctx, "user_id", "123")
+	canonlog.InfoAdd(ctx, "action", "fetch_profile")
+	canonlog.InfoAddMany(ctx, map[string]any{
+		"cache_hit":  true,
+		"db_queries": 2,
 	})
-
-	http.ListenAndServe(":8080", handler)
-}
-```
-
-### Chi Router
-
-```go
-package main
-
-import (
-	"net/http"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/nhalm/canonlog"
-	canonhttp "github.com/nhalm/canonlog/http"
-)
-
-func main() {
-	canonlog.SetupGlobalLogger("info", "text")
-
-	r := chi.NewRouter()
-
-	// Use chi's RequestID middleware (optional but recommended)
-	r.Use(middleware.RequestID)
-
-	// Add canonical logging middleware (integrates with chi's RequestID)
-	r.Use(canonhttp.ChiMiddleware(nil))
-
-	r.Get("/api/users/{id}", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		userID := chi.URLParam(r, "id")
-
-		canonlog.InfoAdd(ctx, "user_id", userID)
-
-		w.Write([]byte("OK"))
-	})
-
-	http.ListenAndServe(":8080", r)
 }
 ```
 
@@ -134,9 +78,7 @@ The final log is emitted at the highest accumulated level. If you call `ErrorAdd
 Logger instances are safe for concurrent use. Multiple goroutines spawned from a single request can safely add fields to the same logger:
 
 ```go
-func handler(w http.ResponseWriter, r *http.Request) {
-    ctx := r.Context()
-
+func processWork(ctx context.Context) {
     var wg sync.WaitGroup
     wg.Add(2)
 
@@ -159,7 +101,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 ### Text Format (default)
 
 ```
-time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=45 requestID=018e8e9e-45a1-7000-8000-123456789abc method=GET path=/api/users/123 user_agent=Mozilla/5.0... remote_ip=192.168.1.1:54321 host=api.example.com status=200 response_size=1024 user_id=123 action=fetch_profile cache_hit=true db_queries=2
+time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=45 user_id=123 action=fetch_profile cache_hit=true db_queries=2
 ```
 
 ### JSON Format
@@ -171,14 +113,6 @@ time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=4
   "msg": "Completed",
   "duration": "45.2ms",
   "duration_ms": 45,
-  "requestID": "018e8e9e-45a1-7000-8000-123456789abc",
-  "method": "GET",
-  "path": "/api/users/123",
-  "user_agent": "Mozilla/5.0...",
-  "remote_ip": "192.168.1.1:54321",
-  "host": "api.example.com",
-  "status": 200,
-  "response_size": 1024,
   "user_id": "123",
   "action": "fetch_profile",
   "cache_hit": true,
@@ -191,10 +125,6 @@ time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=4
 ### Core
 
 **`SetupGlobalLogger(logLevel, logFormat string)`** - Configure global slog logger. Levels: "debug", "info", "warn", "error". Formats: "text" (default), "json".
-
-**`GenerateRequestID() string`** - Generate UUIDv7 request ID.
-
-**`RequestIDGenerator`** - Global variable for custom ID generation. Override to customize.
 
 ### Logger
 
@@ -242,32 +172,22 @@ time=2025-01-15T10:30:45Z level=INFO msg=Completed duration=45.2ms duration_ms=4
 
 **`Flush(ctx)`** - Emit accumulated log entry.
 
-### Middleware
-
-**`Middleware(generator) func(http.Handler) http.Handler`** - Standard HTTP middleware. Pass `nil` for default UUIDv7 generation.
-
-**`ChiMiddleware(generator) func(http.Handler) http.Handler`** - Chi router middleware with RequestID integration. Pass `nil` for default.
-
 ## Multi-Layer Architecture
 
 Canonlog works naturally with layered applications. The context flows through all layers:
 
 ```go
-// API Handler
-func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()  // Logger already in context from middleware
-	userID := chi.URLParam(r, "id")
-
+// Handler
+func (h *Handler) GetUser(ctx context.Context, userID string) (*User, error) {
 	canonlog.InfoAdd(ctx, "handler", "GetUser")
 
 	user, err := h.userService.GetByID(ctx, userID)
 	if err != nil {
 		canonlog.ErrorAdd(ctx, err)
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
+		return nil, err
 	}
 
-	json.NewEncoder(w).Encode(user)
+	return user, nil
 }
 
 // Service Layer
@@ -289,9 +209,9 @@ func (r *UserRepo) FindByID(ctx context.Context, id string) (*User, error) {
 }
 ```
 
-All fields accumulate and are emitted in a single log line when the middleware flushes.
+All fields accumulate and are emitted in a single log line when Flush is called.
 
-## Non-HTTP Usage
+## Background Jobs
 
 Use canonlog for background jobs, workers, or CLI tools:
 

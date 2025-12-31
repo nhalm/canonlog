@@ -4,8 +4,7 @@
 // in a single, parseable log line. This approach reduces log noise, improves performance,
 // and makes debugging easier by keeping all related data together.
 //
-// The package is built on Go's standard log/slog and provides middleware for both
-// standard library HTTP and chi routers.
+// The package is built on Go's standard log/slog.
 package canonlog
 
 import (
@@ -13,8 +12,6 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
-
-	"github.com/google/uuid"
 )
 
 // logLevel stores the configured log level for filtering accumulation.
@@ -28,29 +25,6 @@ func init() {
 // getLogLevel returns the current log level atomically.
 func getLogLevel() slog.Level {
 	return slog.Level(logLevel.Load())
-}
-
-// RequestIDGenerator is the function used to generate request IDs.
-// It can be overridden globally to customize ID generation.
-//
-// IMPORTANT: Set this value before starting any HTTP handlers to avoid race conditions.
-// It should be configured during application initialization, not at runtime.
-//
-// By default, it uses GenerateRequestID which produces UUIDv7 identifiers.
-// You can override this to use custom ID formats:
-//
-//	func init() {
-//		canonlog.RequestIDGenerator = func() string {
-//			return fmt.Sprintf("req_%d", time.Now().UnixNano())
-//		}
-//	}
-var RequestIDGenerator = GenerateRequestID
-
-// GenerateRequestID generates a new unique request ID using UUIDv7.
-// UUIDv7 identifiers are time-ordered and sortable, making them ideal for
-// distributed tracing and log correlation.
-func GenerateRequestID() string {
-	return uuid.Must(uuid.NewV7()).String()
 }
 
 // SetupGlobalLogger configures the global slog logger with the specified level and format.

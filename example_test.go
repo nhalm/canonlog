@@ -3,21 +3,12 @@ package canonlog_test
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 
 	"github.com/nhalm/canonlog"
-	canonhttp "github.com/nhalm/canonlog/http"
 )
 
 func ExampleSetupGlobalLogger() {
 	canonlog.SetupGlobalLogger("info", "text")
-}
-
-func ExampleGenerateRequestID() {
-	id := canonlog.GenerateRequestID()
-	fmt.Printf("Generated request ID: %s\n", id)
 }
 
 func ExampleLogger() {
@@ -55,48 +46,6 @@ func ExampleErrorAdd() {
 	ctx := canonlog.NewContext(context.Background())
 
 	canonlog.ErrorAdd(ctx, errors.New("payment failed"))
-}
-
-func ExampleMiddleware() {
-	mux := http.NewServeMux()
-
-	handler := canonhttp.Middleware(nil)(mux)
-
-	mux.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		canonlog.InfoAdd(ctx, "user_id", "123")
-		canonlog.InfoAddMany(ctx, map[string]any{
-			"action": "list_users",
-			"page":   1,
-		})
-
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
-	})
-
-	req := httptest.NewRequest("GET", "/api/users", nil)
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-}
-
-func ExampleMiddleware_customGenerator() {
-	customGenerator := func() string {
-		return "custom-id-format"
-	}
-
-	mux := http.NewServeMux()
-	handler := canonhttp.Middleware(customGenerator)(mux)
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	req := httptest.NewRequest("GET", "/", nil)
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
 }
 
 func ExampleLogger_chainable() {
