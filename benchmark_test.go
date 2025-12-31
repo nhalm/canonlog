@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-func BenchmarkGenerateRequestID(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_ = GenerateRequestID()
-	}
+// setTestLogLevel sets the log level for benchmarking and returns a cleanup function.
+func setBenchLogLevel(level slog.Level) func() {
+	old := logLevel.Load()
+	logLevel.Store(int32(level))
+	return func() { logLevel.Store(old) }
 }
 
 func BenchmarkNew(b *testing.B) {
@@ -21,9 +21,7 @@ func BenchmarkNew(b *testing.B) {
 }
 
 func BenchmarkLoggerInfoAdd(b *testing.B) {
-	oldLevel := logLevel
-	logLevel = slog.LevelInfo
-	defer func() { logLevel = oldLevel }()
+	defer setBenchLogLevel(slog.LevelInfo)()
 
 	l := New()
 	b.ResetTimer()
@@ -35,12 +33,10 @@ func BenchmarkLoggerInfoAdd(b *testing.B) {
 }
 
 func BenchmarkLoggerInfoAddMany(b *testing.B) {
-	oldLevel := logLevel
-	logLevel = slog.LevelInfo
-	defer func() { logLevel = oldLevel }()
+	defer setBenchLogLevel(slog.LevelInfo)()
 
 	l := New()
-	fields := map[string]interface{}{
+	fields := map[string]any{
 		"key1": "value1",
 		"key2": "value2",
 		"key3": "value3",
@@ -54,9 +50,7 @@ func BenchmarkLoggerInfoAddMany(b *testing.B) {
 }
 
 func BenchmarkInfoAdd(b *testing.B) {
-	oldLevel := logLevel
-	logLevel = slog.LevelInfo
-	defer func() { logLevel = oldLevel }()
+	defer setBenchLogLevel(slog.LevelInfo)()
 
 	ctx := NewContext(context.Background())
 	b.ResetTimer()
@@ -68,12 +62,10 @@ func BenchmarkInfoAdd(b *testing.B) {
 }
 
 func BenchmarkInfoAddMany(b *testing.B) {
-	oldLevel := logLevel
-	logLevel = slog.LevelInfo
-	defer func() { logLevel = oldLevel }()
+	defer setBenchLogLevel(slog.LevelInfo)()
 
 	ctx := NewContext(context.Background())
-	fields := map[string]interface{}{
+	fields := map[string]any{
 		"key1": "value1",
 		"key2": "value2",
 		"key3": "value3",
@@ -87,9 +79,7 @@ func BenchmarkInfoAddMany(b *testing.B) {
 }
 
 func BenchmarkLoggerFlush(b *testing.B) {
-	oldLevel := logLevel
-	logLevel = slog.LevelInfo
-	defer func() { logLevel = oldLevel }()
+	defer setBenchLogLevel(slog.LevelInfo)()
 
 	ctx := context.Background()
 	SetupGlobalLogger("info", "json")
@@ -101,27 +91,11 @@ func BenchmarkLoggerFlush(b *testing.B) {
 		l := New()
 		l.InfoAdd("user_id", "123")
 		l.InfoAdd("action", "test")
-		l.InfoAddMany(map[string]interface{}{
+		l.InfoAddMany(map[string]any{
 			"key1": "value1",
 			"key2": 123,
 			"key3": true,
 		})
-		l.Flush(ctx)
-	}
-}
-
-func BenchmarkLoggerFlushWithError(b *testing.B) {
-	ctx := context.Background()
-	SetupGlobalLogger("error", "json")
-	testErr := context.DeadlineExceeded
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		l := New()
-		l.InfoAdd("user_id", "123")
-		l.WithError(testErr)
 		l.Flush(ctx)
 	}
 }
@@ -136,20 +110,28 @@ func BenchmarkGetLogger(b *testing.B) {
 	}
 }
 
-func BenchmarkGetLoggerFallback(b *testing.B) {
+func BenchmarkTryGetLogger(b *testing.B) {
+	ctx := NewContext(context.Background())
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_, _ = TryGetLogger(ctx)
+	}
+}
+
+func BenchmarkTryGetLoggerMiss(b *testing.B) {
 	ctx := context.Background()
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_ = GetLogger(ctx)
+		_, _ = TryGetLogger(ctx)
 	}
 }
 
 func BenchmarkFullRequestCycle(b *testing.B) {
-	oldLevel := logLevel
-	logLevel = slog.LevelInfo
-	defer func() { logLevel = oldLevel }()
+	defer setBenchLogLevel(slog.LevelInfo)()
 
 	SetupGlobalLogger("info", "json")
 	b.ResetTimer()
@@ -158,10 +140,10 @@ func BenchmarkFullRequestCycle(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ctx := NewContext(context.Background())
 
-		InfoAdd(ctx, "request_id", GenerateRequestID())
+		InfoAdd(ctx, "request_id", "test-request-id")
 		InfoAdd(ctx, "method", "GET")
 		InfoAdd(ctx, "path", "/api/users")
-		InfoAddMany(ctx, map[string]interface{}{
+		InfoAddMany(ctx, map[string]any{
 			"user_id":       "123",
 			"status":        200,
 			"response_size": 1024,
