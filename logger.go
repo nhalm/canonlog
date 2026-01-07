@@ -11,12 +11,16 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
 // logLevel stores the configured log level for filtering accumulation.
 // Uses atomic operations for thread-safe read/write.
 var logLevel atomic.Int32
+
+// setupOnce ensures SetupGlobalLogger only executes once.
+var setupOnce sync.Once
 
 func init() {
 	logLevel.Store(int32(slog.LevelInfo))
@@ -28,48 +32,55 @@ func getLogLevel() slog.Level {
 }
 
 // SetupGlobalLogger configures the global slog logger with the specified level and format.
+// This function is safe to call from multiple goroutines but only executes once;
+// subsequent calls are no-ops.
 //
-// Valid log levels: "debug", "info", "warn", "warning", "error" (default: "info")
-// Valid formats: "json", "text" (default: "text")
+// Valid log levels: "debug", "info", "warn", "warning", "error".
+// Invalid or empty level values default to "info".
+//
+// Valid formats: "json", "text".
+// Invalid or empty format values default to "text".
 //
 // Example:
 //
 //	canonlog.SetupGlobalLogger("debug", "json")
 func SetupGlobalLogger(levelStr, logFormat string) {
-	// Parse log level
-	var level slog.Level
-	switch strings.ToLower(levelStr) {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn", "warning":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo // Default to info if unknown
-	}
+	setupOnce.Do(func() {
+		// Parse log level
+		var level slog.Level
+		switch strings.ToLower(levelStr) {
+		case "debug":
+			level = slog.LevelDebug
+		case "info":
+			level = slog.LevelInfo
+		case "warn", "warning":
+			level = slog.LevelWarn
+		case "error":
+			level = slog.LevelError
+		default:
+			level = slog.LevelInfo // Default to info if unknown
+		}
 
-	// Create handler based on format
-	var handler slog.Handler
-	opts := &slog.HandlerOptions{
-		Level: level,
-	}
+		// Create handler based on format
+		var handler slog.Handler
+		opts := &slog.HandlerOptions{
+			Level: level,
+		}
 
-	switch strings.ToLower(logFormat) {
-	case "json":
-		handler = slog.NewJSONHandler(os.Stdout, opts)
-	case "text":
-		handler = slog.NewTextHandler(os.Stdout, opts)
-	default:
-		handler = slog.NewTextHandler(os.Stdout, opts) // Default to text
-	}
+		switch strings.ToLower(logFormat) {
+		case "json":
+			handler = slog.NewJSONHandler(os.Stdout, opts)
+		case "text":
+			handler = slog.NewTextHandler(os.Stdout, opts)
+		default:
+			handler = slog.NewTextHandler(os.Stdout, opts) // Default to text
+		}
 
-	// Store the level for accumulation filtering (atomic)
-	logLevel.Store(int32(level))
+		// Store the level for accumulation filtering (atomic)
+		logLevel.Store(int32(level))
 
-	// Set the global logger
-	logger := slog.New(handler)
-	slog.SetDefault(logger)
+		// Set the global logger
+		logger := slog.New(handler)
+		slog.SetDefault(logger)
+	})
 }

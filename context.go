@@ -2,6 +2,7 @@ package canonlog
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 )
@@ -14,15 +15,19 @@ var attrPool = sync.Pool{
 	},
 }
 
-type loggerKeyType string
+// maxErrors limits the number of errors stored to prevent unbounded memory growth.
+const maxErrors = 10
 
-const loggerKey loggerKeyType = "canonlogger"
+type loggerKeyType struct{}
+
+var loggerKey = &loggerKeyType{}
 
 // Option configures a Logger.
 type Option func(*Logger)
 
-// WithLevel sets the gate level for this logger, overriding the global level.
-// Fields are only accumulated if their level meets or exceeds this gate level.
+// WithLevel sets both the gate level and initial output level for this logger,
+// overriding the global level. Fields are only accumulated if their level meets
+// or exceeds this gate level. The output level can still escalate via WarnAdd/ErrorAdd.
 func WithLevel(level slog.Level) Option {
 	return func(l *Logger) {
 		l.gateLevel = level
@@ -44,11 +49,12 @@ func WithLevel(level slog.Level) Option {
 //	log.InfoAdd("user_id", "123")
 //	defer log.Flush(ctx)
 type Logger struct {
-	mu        sync.Mutex
-	fields    map[string]any
-	errors    []string
-	gateLevel slog.Level // controls what gets accumulated
-	level     slog.Level // output level, can escalate
+	mu            sync.Mutex
+	fields        map[string]any
+	errors        []error
+	errorsDropped int        // count of errors dropped due to maxErrors limit
+	gateLevel     slog.Level // controls what gets accumulated
+	level         slog.Level // output level, can escalate
 }
 
 // New creates a new logger with default settings.
@@ -56,8 +62,8 @@ type Logger struct {
 func New(opts ...Option) *Logger {
 	lvl := getLogLevel()
 	l := &Logger{
-		fields:    make(map[string]any, 8),
-		errors:    make([]string, 0, 2),
+		fields:    make(map[string]any, 16),
+		errors:    make([]error, 0, 2),
 		gateLevel: lvl,
 		level:     lvl,
 	}
@@ -141,10 +147,16 @@ func (l *Logger) WarnAddMany(fields map[string]any) *Logger {
 
 // ErrorAdd appends an error to the errors slice and sets level to Error.
 // All errors are output as an "errors" array in the final log entry.
+// A maximum of 10 errors are stored to prevent unbounded memory growth;
+// if exceeded, "...and N more" is appended to the errors array.
 func (l *Logger) ErrorAdd(err error) *Logger {
 	if err != nil && l.gateLevel <= slog.LevelError {
 		l.mu.Lock()
-		l.errors = append(l.errors, err.Error())
+		if len(l.errors) < maxErrors {
+			l.errors = append(l.errors, err)
+		} else {
+			l.errorsDropped++
+		}
 		if l.level < slog.LevelError {
 			l.level = slog.LevelError
 		}
@@ -160,32 +172,49 @@ func (l *Logger) ErrorAdd(err error) *Logger {
 // level returns to the gate level. This allows multiple Flush calls for batch
 // processing or long-running operations.
 //
+// Flush should be called once per logical unit of work (e.g., once per HTTP request
+// or once per batch item). Flush is safe to call multiple times or concurrently;
+// subsequent calls with no new data are no-ops.
+//
 // This method is typically called in a defer statement to ensure logging
 // happens even if the handler panics.
 func (l *Logger) Flush(ctx context.Context) {
 	// Copy data and reset under lock
 	l.mu.Lock()
+
+	// Skip if nothing to log (handles concurrent/duplicate Flush calls)
+	if len(l.fields) == 0 && len(l.errors) == 0 && l.errorsDropped == 0 {
+		l.mu.Unlock()
+		return
+	}
+
 	outputLevel := l.level
 	fieldsCopy := make(map[string]any, len(l.fields))
 	for k, v := range l.fields {
 		fieldsCopy[k] = v
 	}
-	var errorsCopy []string
+	var errorsCopy []error
 	if len(l.errors) > 0 {
-		errorsCopy = make([]string, len(l.errors))
+		errorsCopy = make([]error, len(l.errors))
 		copy(errorsCopy, l.errors)
 	}
+	dropped := l.errorsDropped
 
-	// Reset logger state for reuse
-	clear(l.fields)
-	l.errors = make([]string, 0, 2)
+	// Reset logger state for reuse (replace map if it grew too large)
+	if len(l.fields) > 100 {
+		l.fields = make(map[string]any, 16)
+	} else {
+		clear(l.fields)
+	}
+	l.errors = make([]error, 0, 2)
+	l.errorsDropped = 0
 	l.level = l.gateLevel
 	l.mu.Unlock()
 
 	// Pre-calculate capacity to avoid reallocation
 	neededCap := len(fieldsCopy)
 	if len(errorsCopy) > 0 {
-		neededCap++
+		neededCap++ // for errors array
 	}
 
 	// Build attrs outside lock
@@ -202,23 +231,39 @@ func (l *Logger) Flush(ctx context.Context) {
 	}
 
 	if len(errorsCopy) > 0 {
-		attrs = append(attrs, slog.Any("errors", errorsCopy))
+		errStrings := make([]string, len(errorsCopy))
+		for i, err := range errorsCopy {
+			errStrings[i] = err.Error()
+		}
+		if dropped > 0 {
+			errStrings = append(errStrings, fmt.Sprintf("...and %d more", dropped))
+		}
+		attrs = append(attrs, slog.Any("errors", errStrings))
 	}
 
 	slog.LogAttrs(ctx, outputLevel, "", attrs...)
 
-	// Return slice to pool, preserving any capacity growth
-	*attrsPtr = attrs
-	attrPool.Put(attrsPtr)
+	// Return slice to pool unless it grew too large
+	if cap(attrs) <= 128 {
+		*attrsPtr = attrs
+		attrPool.Put(attrsPtr)
+	}
 }
 
 // NewContext creates a new context with a logger attached.
 // This is typically called by middleware at the start of a request.
+// Note: This always creates a new logger, replacing any existing logger in the context.
 func NewContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, loggerKey, New())
 }
 
 // GetLogger retrieves the logger from context or panics if none exists.
+//
+// This function panics intentionally to catch programming errors early. A missing
+// logger indicates that NewContext was not called in the request chain, which is
+// a bug that should be fixed rather than silently ignored. Use TryGetLogger if
+// you need to handle the missing logger case gracefully.
+//
 // Use this when you want to chain multiple field additions:
 //
 //	canonlog.GetLogger(ctx).
@@ -228,7 +273,7 @@ func GetLogger(ctx context.Context) *Logger {
 	if l, ok := ctx.Value(loggerKey).(*Logger); ok {
 		return l
 	}
-	panic("canonlog: no logger in context - did you forget to call NewContext()?")
+	panic("canonlog: no logger in context - ensure NewContext is called in middleware")
 }
 
 // TryGetLogger retrieves the logger from context without panicking.
@@ -239,42 +284,50 @@ func TryGetLogger(ctx context.Context) (*Logger, bool) {
 }
 
 // DebugAdd adds a field to the logger in context if debug level is enabled.
+// Panics if no logger exists in context.
 func DebugAdd(ctx context.Context, key string, value any) {
 	GetLogger(ctx).DebugAdd(key, value)
 }
 
 // DebugAddMany adds multiple fields to the logger in context if debug level is enabled.
+// Panics if no logger exists in context.
 func DebugAddMany(ctx context.Context, fields map[string]any) {
 	GetLogger(ctx).DebugAddMany(fields)
 }
 
 // InfoAdd adds a field to the logger in context if info level is enabled.
+// Panics if no logger exists in context.
 func InfoAdd(ctx context.Context, key string, value any) {
 	GetLogger(ctx).InfoAdd(key, value)
 }
 
 // InfoAddMany adds multiple fields to the logger in context if info level is enabled.
+// Panics if no logger exists in context.
 func InfoAddMany(ctx context.Context, fields map[string]any) {
 	GetLogger(ctx).InfoAddMany(fields)
 }
 
 // WarnAdd adds a field to the logger in context if warn level is enabled.
+// Panics if no logger exists in context.
 func WarnAdd(ctx context.Context, key string, value any) {
 	GetLogger(ctx).WarnAdd(key, value)
 }
 
 // WarnAddMany adds multiple fields to the logger in context if warn level is enabled.
+// Panics if no logger exists in context.
 func WarnAddMany(ctx context.Context, fields map[string]any) {
 	GetLogger(ctx).WarnAddMany(fields)
 }
 
 // ErrorAdd appends an error to the logger in context and sets level to Error.
+// Panics if no logger exists in context.
 func ErrorAdd(ctx context.Context, err error) {
 	GetLogger(ctx).ErrorAdd(err)
 }
 
 // Flush logs the accumulated data from the logger stored in context.
-// This is typically called in a defer statement by middleware.
+// The context is passed to the underlying slog handler for trace propagation.
+// Panics if no logger exists in context.
 func Flush(ctx context.Context) {
 	GetLogger(ctx).Flush(ctx)
 }
