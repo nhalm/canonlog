@@ -75,7 +75,7 @@ The final log is emitted at the highest accumulated level. If you call `ErrorAdd
 
 ## Thread Safety
 
-Logger instances are safe for concurrent use. Multiple goroutines spawned from a single request can safely add fields to the same logger:
+Logger instances are fully safe for concurrent use. Multiple goroutines can safely add fields to the same logger, and `Flush` is safe to call multiple times (subsequent calls with no new data are no-ops):
 
 ```go
 func processWork(ctx context.Context) {
@@ -124,7 +124,7 @@ time=2025-01-15T10:30:45Z level=INFO msg="" user_id=123 action=fetch_profile cac
 
 ### Core
 
-**`SetupGlobalLogger(logLevel, logFormat string)`** - Configure global slog logger. Levels: "debug", "info", "warn", "error". Formats: "text" (default), "json".
+**`SetupGlobalLogger(logLevel, logFormat string)`** - Configure global slog logger. Levels: `debug`, `info`, `warn` (or `warning`), `error` (default: `info`). Formats: `text`, `json` (default: `text`). Invalid values fall back to defaults. This function only executes once; subsequent calls are no-ops.
 
 ### Options
 
@@ -151,9 +151,9 @@ l := canonlog.New(canonlog.WithLevel(slog.LevelError)) // uses ERROR level
 
 **`(*Logger).WarnAddMany(map[string]any) *Logger`** - Add multiple fields at warn level, escalates log level (chainable).
 
-**`(*Logger).ErrorAdd(err error) *Logger`** - Append error to errors array, escalates log level (chainable).
+**`(*Logger).ErrorAdd(err error) *Logger`** - Append error to errors array, escalates log level (chainable). Maximum 10 errors stored; if exceeded, `"...and N more"` is appended to the array.
 
-**`(*Logger).Flush(ctx)`** - Emit accumulated log entry and reset logger for reuse.
+**`(*Logger).Flush(ctx context.Context)`** - Emit accumulated log entry and reset logger for reuse.
 
 ### Context Helpers
 
@@ -161,7 +161,13 @@ l := canonlog.New(canonlog.WithLevel(slog.LevelError)) // uses ERROR level
 
 **`GetLogger(ctx) *Logger`** - Retrieve logger from context for chaining. Panics if no logger exists.
 
-**`TryGetLogger(ctx) (*Logger, bool)`** - Retrieve logger from context without panicking. Returns (nil, false) if no logger.
+**`TryGetLogger(ctx) (*Logger, bool)`** - Retrieve logger from context without panicking. Returns (nil, false) if no logger. Useful for optional logging in shared code:
+
+```go
+if l, ok := canonlog.TryGetLogger(ctx); ok {
+    l.InfoAdd("optional_field", "value")
+}
+```
 
 **`DebugAdd(ctx, key, value)`** - Add field at debug level.
 

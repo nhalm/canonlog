@@ -3,7 +3,9 @@ package canonlog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"sync"
 	"testing"
 )
 
@@ -109,7 +111,7 @@ func TestLoggerErrorAdd(t *testing.T) {
 		t.Fatalf("Expected 1 error, got %d", len(l.errors))
 	}
 
-	if l.errors[0] != "test error" {
+	if l.errors[0].Error() != "test error" {
 		t.Errorf("Expected error 'test error', got %v", l.errors[0])
 	}
 
@@ -131,11 +133,11 @@ func TestLoggerErrorAddMultiple(t *testing.T) {
 		t.Fatalf("Expected 2 errors, got %d", len(l.errors))
 	}
 
-	if l.errors[0] != "error 1" {
+	if l.errors[0].Error() != "error 1" {
 		t.Errorf("Expected first error 'error 1', got %v", l.errors[0])
 	}
 
-	if l.errors[1] != "error 2" {
+	if l.errors[1].Error() != "error 2" {
 		t.Errorf("Expected second error 'error 2', got %v", l.errors[1])
 	}
 }
@@ -286,7 +288,7 @@ func TestErrorAdd_ContextHelper(t *testing.T) {
 		t.Fatalf("Expected 1 error, got %d", len(l.errors))
 	}
 
-	if l.errors[0] != "context error" {
+	if l.errors[0].Error() != "context error" {
 		t.Errorf("Expected error 'context error', got %v", l.errors[0])
 	}
 
@@ -323,5 +325,46 @@ func TestHighestLevelTracking(t *testing.T) {
 	l.ErrorAdd(errors.New("error"))
 	if l.level != slog.LevelError {
 		t.Errorf("Expected level Error after ErrorAdd, got %v", l.level)
+	}
+}
+
+func TestErrorAddMaxErrors(t *testing.T) {
+	defer setTestLogLevel(slog.LevelError)()
+
+	l := New()
+
+	// Add more than maxErrors (10)
+	for i := 0; i < 15; i++ {
+		l.ErrorAdd(errors.New("error"))
+	}
+
+	if len(l.errors) != maxErrors {
+		t.Errorf("Expected exactly %d errors, got %d", maxErrors, len(l.errors))
+	}
+
+	if l.errorsDropped != 5 {
+		t.Errorf("Expected 5 errors dropped, got %d", l.errorsDropped)
+	}
+}
+
+func TestConcurrentFieldAddition(t *testing.T) {
+	defer setTestLogLevel(slog.LevelInfo)()
+
+	l := New()
+	var wg sync.WaitGroup
+
+	// Add 100 fields concurrently
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			l.InfoAdd(fmt.Sprintf("key%d", n), n)
+		}(i)
+	}
+
+	wg.Wait()
+
+	if len(l.fields) != 100 {
+		t.Errorf("Expected 100 fields, got %d", len(l.fields))
 	}
 }
